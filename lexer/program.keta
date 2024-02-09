@@ -1,0 +1,30 @@
+open ket.std;
+
+struct AnsiStr {
+  str: string,
+  len: int,
+  color: Color,
+}
+
+enum string {
+  Red = "\e[0;31m",
+  Green = "\e[0;32m",
+  Blue = "\e[0;34m",
+  End = "\033[0m",
+  // ... 
+} AnsiCode;
+
+impl T:
+[]int | []float { 
+fn sum(nums: T) -> int {
+  let ans = nums.fold((func: |num, acc| -> num + acc), acc: 0);
+  return ans; 
+  }
+}
+
+fn main() {
+  let x: float = 6.9;
+  let arr: int[] = [1, 2, 3, 4, 5];
+  let total = arr.sum();
+}
+
