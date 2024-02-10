@@ -1,0 +1,30 @@
+open keta.std;
+
+
+fn main() {
+ let num: int = 22;
+ let word: str = "Hello, World!";
+ let nums: []int = [num, 33, 43, 44, 84, 98];
+
+ let res: []int = res.iter().map(|x| x += 1).end();
+}
+
+impl iter<T>  {
+  fn map(f:fn(T) -> T) -> T {
+    mut res: T = [];
+    for i in self {
+      res.push(f(i));
+    }
+    return res;
+  }
+}
+
+impl T: iter<int | float> {
+  fn sum() -> int {
+    mut res: int = 0;
+    for i in self {
+      res += i;
+    }
+    return res;
+  }
+}

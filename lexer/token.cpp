@@ -380,11 +380,11 @@ std::string Token::operator_to_string(OperatorType type) {
   return std::string(op_type);
 }
 // Identifiers and Keywords
-Token Token::make_identifier(std::string value) {
+Token Token::make_identifier(std::string value, uint32_t line) {
   if (Keyword::keyword_from_string(value).value != KeywordType::None) {
-    return Token{TokenType::Keyword, Keyword::keyword_from_string(value)};
+    return Token{TokenType::Keyword, Keyword::keyword_from_string(value), line};
   } else {
-    return Token{TokenType::Identifier, Identifier{value}};
+    return Token{TokenType::Identifier, Identifier{value}, line};
   }
 }
 
@@ -422,22 +422,49 @@ bool Token::are_equal(const Token &lhs, const Token &rhs) {
   }
   return false;
 }
-
-Token Token::make_operator(OperatorType value) {
-  return Token{TokenType::Operator, Operator{value}};
+Token Token::make_token(TokenType kind, TokenData data, uint32_t line) {
+  return Token{kind, data, line};
 }
 
-Token Token::make_string_literal(std::string value) {
-  return Token{TokenType::StringLiteral, StringLiteral{value}};
+Token Token::make_operator(OperatorType value, uint32_t line) {
+  return Token{TokenType::Operator, Operator{value}, line};
 }
 
-Token Token::make_char_literal(char value) {
-  return Token{TokenType::CharLiteral, CharLiteral(value)};
+Token Token::make_string_literal(std::string value, uint32_t line) {
+  return Token{TokenType::StringLiteral, StringLiteral{value}, line};
 }
 
-Token Token::make_number_literal(std::string value) {
+Token Token::make_char_literal(char value, uint32_t line) {
+  return Token{TokenType::CharLiteral, CharLiteral(value), line};
+}
+
+Token Token::make_number_literal(std::string value, uint32_t line) {
   if (value.find('.') != std::string::npos) {
-    return Token{TokenType::FloatLiteral, FloatLiteral{value}};
+    return Token{TokenType::FloatLiteral, FloatLiteral{value}, line};
   }
-  return Token{TokenType::NumberLiteral, NumberLiteral{value}};
+  return Token{TokenType::NumberLiteral, NumberLiteral{value}, line};
+}
+std::string Token::token_type_string(TokenType kind) {
+  if (kind == TokenType::Identifier) {
+    return std::string("Identifier");
+  }
+  if (kind == TokenType::Keyword) {
+    return std::string("Keyword");
+  }
+  if (kind == TokenType::NumberLiteral) {
+    return std::string("NumberLiteral");
+  }
+  if (kind == TokenType::StringLiteral) {
+    return std::string("StringLiteral");
+  }
+  if (kind == TokenType::CharLiteral) {
+    return std::string("CharLiteral");
+  }
+  if (kind == TokenType::FloatLiteral) {
+    return std::string("FloatLiteral");
+  }
+  if (kind == TokenType::Operator) {
+    return std::string("Operator");
+  }
+  return "none";
 }

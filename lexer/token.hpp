@@ -1,3 +1,5 @@
+#pragma once
+#include <cstdint>
 #include <string>
 #include <variant>
 
@@ -12,6 +14,7 @@ enum class TokenType {
   FloatLiteral,
   EOFToken,
 };
+
 enum class OperatorType {
   LParen,
   RParen,
@@ -196,14 +199,17 @@ class Token {
 public:
   TokenType kind;
   TokenData data;
+  uint32_t line;
 
   template <typename T>
-  Token(TokenType kind, T data) : kind(kind), data(data) {}
+  Token(TokenType kind, T data, uint32_t line)
+      : kind(kind), data(data), line(line) {}
   Token() : kind(TokenType::None), data(Identifier()) {}
   Token(const Token &other) : kind(other.kind), data(other.data) {}
   Token &operator=(const Token &other) {
     kind = other.kind;
     data = other.data;
+    line = other.line;
     return *this;
   }
   ~Token() = default;
@@ -211,13 +217,13 @@ public:
   // overload operator to compare tokens
   bool operator==(const Token &other) const { return are_equal(*this, other); }
   static bool are_equal(const Token &lhs, const Token &rhs);
-  static Token make_identifier(std::string value);
-  static Token make_operator(OperatorType value);
-  static Token make_string_literal(std::string value);
-  static Token make_char_literal(char value);
-  static Token make_number_literal(std::string value);
-  static Token make_token(TokenType kind, std::string value);
-  std::string token_to_string();
+  static Token make_identifier(std::string value, uint32_t line);
+  static Token make_operator(OperatorType value, uint32_t line);
+  static Token make_string_literal(std::string value, uint32_t line);
+  static Token make_char_literal(char value, uint32_t line);
+  static Token make_number_literal(std::string value, uint32_t line);
+  static Token make_token(TokenType kind, TokenData value, uint32_t line);
+  static std::string token_type_string(TokenType kind);
 
   static std::string keyword_to_string(KeywordType type);
   static std::string operator_to_string(OperatorType type);

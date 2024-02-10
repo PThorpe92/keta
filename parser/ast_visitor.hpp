@@ -1,4 +1,4 @@
-#include "../lexer/token.hpp"
+#include "ast_node.hpp"
 #include <memory>
 #include <sys/types.h>
 #include <vector>
@@ -6,10 +6,10 @@
 class AstVisitor {
 
 public:
-  Token *current_token;
-  uint token_index;
   std::vector<TokenSpan> tokens;
   std::vector<std::unique_ptr<AstNode>> nodes;
+  AstNode *root;
+  virtual void visit(AstNode *node) = 0;
   AstVisitor() = default;
   AstVisitor(std::vector<TokenSpan> tokens) : tokens(tokens) {}
   ~AstVisitor() = default;

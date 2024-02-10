@@ -41,7 +41,7 @@ Token Lexer::build_identifier() {
       keyword += "[]";
     }
   }
-  return Token::make_identifier(keyword);
+  return Token::make_identifier(keyword, this->line);
 }
 
 void Lexer::skip_comment() {
@@ -69,10 +69,13 @@ Token Lexer::build_number() {
     if (is_digit(this->current_char) || this->current_char == '.') {
       num_literal.push_back(this->current_char);
     } else {
+      this->tokens.push_back(TokenSpan(
+          Token::make_token(TokenType::EOFToken, Identifier(), this->line),
+          Span(this->position, this->position)));
       break;
     }
   }
-  return Token::make_number_literal(num_literal);
+  return Token::make_number_literal(num_literal, this->line);
 }
 
 Token Lexer::build_string() {
@@ -83,7 +86,7 @@ Token Lexer::build_string() {
       this->line++;
     }
   }
-  return Token::make_string_literal(str_literal);
+  return Token::make_string_literal(str_literal, this->line);
 }
 
 char Lexer::next() {
@@ -116,6 +119,9 @@ void Lexer::parse_tokens() {
     if (this->current_char != '\0') {
       this->parse_tokens();
     } else {
+      this->tokens.push_back(TokenSpan(
+          Token::make_token(TokenType::EOFToken, Identifier(), this->line),
+          Span(this->position, this->position)));
       return;
     }
   } else if (is_letter(this->current_char)) {
@@ -126,6 +132,9 @@ void Lexer::parse_tokens() {
     if (this->current_char != '\0') {
       this->parse_tokens();
     } else {
+      this->tokens.push_back(TokenSpan(
+          Token::make_token(TokenType::EOFToken, Identifier(), this->line),
+          Span(this->position, this->position)));
       return;
     }
   } else {
@@ -136,6 +145,9 @@ void Lexer::parse_tokens() {
     if (this->next() != '\0') {
       this->parse_tokens();
     } else {
+      this->tokens.push_back(TokenSpan(
+          Token::make_token(TokenType::EOFToken, Identifier(), this->line),
+          Span(this->position, this->position)));
       return;
     }
   }
@@ -151,126 +163,126 @@ Token Lexer::build_operator() {
     this->next();
   }
   if (op == "->")
-    return Token::make_operator(OperatorType::Arrow);
+    return Token::make_operator(OperatorType::Arrow, this->line);
   else if (op == "==")
-    return Token::make_operator(OperatorType::EqEq);
+    return Token::make_operator(OperatorType::EqEq, this->line);
   else if (op == "!=")
-    return Token::make_operator(OperatorType::NotEq);
+    return Token::make_operator(OperatorType::NotEq, this->line);
   else if (op == ">=")
-    return Token::make_operator(OperatorType::GreaterEq);
+    return Token::make_operator(OperatorType::GreaterEq, this->line);
   else if (op == "<=")
-    return Token::make_operator(OperatorType::LessEq);
+    return Token::make_operator(OperatorType::LessEq, this->line);
   else if (op == "<<")
-    return Token::make_operator(OperatorType::LeftShift);
+    return Token::make_operator(OperatorType::LeftShift, this->line);
   else if (op == ">>")
-    return Token::make_operator(OperatorType::RightShift);
+    return Token::make_operator(OperatorType::RightShift, this->line);
   else if (op == "::")
-    return Token::make_operator(OperatorType::ColCol);
+    return Token::make_operator(OperatorType::ColCol, this->line);
   else if (op == "&&")
-    return Token::make_operator(OperatorType::LogicalAnd);
+    return Token::make_operator(OperatorType::LogicalAnd, this->line);
   else if (op == "||")
-    return Token::make_operator(OperatorType::LogicalOr);
+    return Token::make_operator(OperatorType::LogicalOr, this->line);
   else if (op == "+=")
-    return Token::make_operator(OperatorType::PlusEq);
+    return Token::make_operator(OperatorType::PlusEq, this->line);
   else if (op == "-=")
-    return Token::make_operator(OperatorType::MinusEq);
+    return Token::make_operator(OperatorType::MinusEq, this->line);
   else if (op == "/=")
-    return Token::make_operator(OperatorType::DivEq);
+    return Token::make_operator(OperatorType::DivEq, this->line);
   else if (op == "*=")
-    return Token::make_operator(OperatorType::TimesEq);
+    return Token::make_operator(OperatorType::TimesEq, this->line);
   else if (op == "//")
     this->skip_comment();
   else if (op == "\'\'")
-    return Token::make_operator(OperatorType::EmptyChar);
+    return Token::make_operator(OperatorType::EmptyChar, this->line);
   else if (op == "\"\"")
-    return Token::make_operator(OperatorType::EmptyString);
+    return Token::make_operator(OperatorType::EmptyString, this->line);
   else if (op == "[]")
-    return Token::make_operator(OperatorType::EmptyBrackets);
+    return Token::make_operator(OperatorType::EmptyBrackets, this->line);
   else {
     switch (this->current_char) {
     case '(':
-      return Token::make_operator(OperatorType::LParen);
+      return Token::make_operator(OperatorType::LParen, this->line);
       break;
     case ')':
-      return Token::make_operator(OperatorType::RParen);
+      return Token::make_operator(OperatorType::RParen, this->line);
       break;
     case '[':
-      return Token::make_operator(OperatorType::LBracket);
+      return Token::make_operator(OperatorType::LBracket, this->line);
       break;
     case ']':
-      return Token::make_operator(OperatorType::RBracket);
+      return Token::make_operator(OperatorType::RBracket, this->line);
       break;
     case '{':
-      return Token::make_operator(OperatorType::LBrace);
+      return Token::make_operator(OperatorType::LBrace, this->line);
       break;
     case '}':
-      return Token::make_operator(OperatorType::RBrace);
+      return Token::make_operator(OperatorType::RBrace, this->line);
       break;
     case ';':
-      return Token::make_operator(OperatorType::Semicolon);
+      return Token::make_operator(OperatorType::Semicolon, this->line);
       break;
     case ':':
-      return Token::make_operator(OperatorType::Colon);
+      return Token::make_operator(OperatorType::Colon, this->line);
       break;
     case ',':
-      return Token::make_operator(OperatorType::Comma);
+      return Token::make_operator(OperatorType::Comma, this->line);
       break;
     case '.': {
-      return Token::make_operator(OperatorType::Period);
+      return Token::make_operator(OperatorType::Period, this->line);
     }
     case '+':
-      return Token::make_operator(OperatorType::Plus);
+      return Token::make_operator(OperatorType::Plus, this->line);
       break;
     case '-':
-      return Token::make_operator(OperatorType::Minus);
+      return Token::make_operator(OperatorType::Minus, this->line);
       break;
     case '*':
-      return Token::make_operator(OperatorType::Asterisk);
+      return Token::make_operator(OperatorType::Asterisk, this->line);
       break;
     case '%':
-      return Token::make_operator(OperatorType::Modulo);
+      return Token::make_operator(OperatorType::Modulo, this->line);
       break;
     case '=':
-      return Token::make_operator(OperatorType::Eq);
+      return Token::make_operator(OperatorType::Eq, this->line);
       break;
     case '!':
-      return Token::make_operator(OperatorType::Bang);
+      return Token::make_operator(OperatorType::Bang, this->line);
       break;
     case '<':
-      return Token::make_operator(OperatorType::LCaret);
+      return Token::make_operator(OperatorType::LCaret, this->line);
       break;
     case '>':
-      return Token::make_operator(OperatorType::RCaret);
+      return Token::make_operator(OperatorType::RCaret, this->line);
     case '&':
-      return Token::make_operator(OperatorType::Amp);
+      return Token::make_operator(OperatorType::Amp, this->line);
     case '|':
-      return Token::make_operator(OperatorType::Pipe);
+      return Token::make_operator(OperatorType::Pipe, this->line);
       break;
     case '^':
-      return Token::make_operator(OperatorType::Caret);
+      return Token::make_operator(OperatorType::Caret, this->line);
       break;
     case '#':
-      return Token::make_operator(OperatorType::Hashtag);
+      return Token::make_operator(OperatorType::Hashtag, this->line);
       break;
     case '?':
-      return Token::make_operator(OperatorType::QuestionMark);
+      return Token::make_operator(OperatorType::QuestionMark, this->line);
       break;
     case '_':
       if (is_letter(peek)) {
         return this->build_identifier();
         break;
       } else {
-        return Token::make_operator(OperatorType::Underscore);
+        return Token::make_operator(OperatorType::Underscore, this->line);
       }
     case '\\':
-      return Token::make_operator(OperatorType::Backslash);
+      return Token::make_operator(OperatorType::Backslash, this->line);
       break;
     case '\"': {
       return this->build_string();
       break;
     }
     case '\'':
-      return Token::make_operator(OperatorType::SingleQuote);
+      return Token::make_operator(OperatorType::SingleQuote, this->line);
     };
   };
   return this->build_identifier();
