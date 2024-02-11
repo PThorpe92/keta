@@ -224,7 +224,6 @@ public:
   static Token make_number_literal(std::string value, uint32_t line);
   static Token make_token(TokenType kind, TokenData value, uint32_t line);
   static std::string token_type_string(TokenType kind);
-
   static std::string keyword_to_string(KeywordType type);
   static std::string operator_to_string(OperatorType type);
   static std::string number_literal_to_string(NumberLiteral num);

@@ -1,5 +1,6 @@
 #include "../lexer/token.hpp"
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -47,26 +48,33 @@ public:
   AstNode *parent = nullptr;
   std::unique_ptr<AstNode> left = nullptr;
   std::unique_ptr<AstNode> right = nullptr;
+  Identifier *identifier = nullptr;
   AstNode() = default;
   explicit AstNode(NodeType type) : type(type) {}
   virtual ~AstNode() = default;
 
   NodeType get_type() const;
-  virtual void set_left(AstNode *node);
-  virtual void set_right(AstNode *node);
-  virtual std::unique_ptr<AstNode> make_node(NodeType type);
+  void operator=(AstNode *node);
+  void operator=(AstNode &node);
+  void operator=(std::unique_ptr<AstNode> node);
+  virtual void set_left(std::unique_ptr<AstNode> node);
+  virtual void set_right(std::unique_ptr<AstNode> node);
+  virtual void set_identifier(Identifier *ident);
+  static AstNode *make_node(NodeType type);
+  virtual AstNode *get_parent();
   virtual void set_parent(AstNode *node);
+  AstNode *get_left();
+  AstNode *get_right();
+  virtual void print_node() const;
 };
 
 class Program : public AstNode {
 public:
-  std::string filename;
   Program() : AstNode(NodeType::Program) {}
 };
 
 class OpenModule : public AstNode {
 public:
-  std::string module_name;
   OpenModule() : AstNode(NodeType::OpenModule){};
 };
 
@@ -84,9 +92,10 @@ public:
 
 class Variable : public AstNode {
 public:
-  std::string variable_name;
   VarType *var_type;
   Variable() : AstNode(NodeType::Variable){};
+  void set_name(Identifier *name);
+  void set_type(Keyword *type);
 };
 
 class FunctionParameters : public AstNode {
@@ -105,6 +114,7 @@ public:
   void set_name(Identifier *name);
   void set_parameters(FunctionParameters *parameters);
   void set_return_type(AstNode *return_type);
+  void set_body(AstNode *body);
 };
 
 class FunctionReturnType : public AstNode {
@@ -123,19 +133,27 @@ class FunctionArguments : public AstNode {
 public:
   std::vector<std::unique_ptr<AstNode>> arguments;
   FunctionArguments() : AstNode(NodeType::FunctionArguments){};
+  void add_argument(AstNode *argument);
 };
 
 class FunctionCall : public AstNode {
 public:
   Function *function_name;
-  std::unique_ptr<FunctionArguments> arguments;
+  FunctionArguments *arguments;
   FunctionCall() : AstNode(NodeType::FunctionCall){};
+  FunctionCall(Function *function_name, FunctionArguments *arguments)
+      : function_name(function_name), arguments(arguments) {}
+  void set_function_name(Function *function_name);
+  void set_arguments(FunctionArguments *arguments);
 };
 
 class ReturnStatement : public AstNode {
 public:
-  std::unique_ptr<AstNode> expression;
+  AstNode *expression;
   ReturnStatement() : AstNode(NodeType::ReturnStatement){};
+  ~ReturnStatement() = default;
+  void operator=(AstNode *expression);
+  void set_expression(AstNode *expression);
 };
 
 class StructField : public AstNode {
@@ -146,12 +164,15 @@ public:
   StructField() : AstNode(NodeType::StructField){};
   StructField(Variable *field, VarType *type, bool is_mutable)
       : field(field), type(type), is_mutable(is_mutable) {}
+  void set_field(Variable *field);
+  void set_type(VarType *type);
+  void set_mutable(bool is_mutable);
 };
 
 class StructDefinition : public AstNode {
 public:
   std::string struct_name;
-  std::vector<std::unique_ptr<StructField>> body;
+  std::vector<StructField *> body;
   StructDefinition() : AstNode(NodeType::StructDefinition){};
   void add_field(StructField *field);
   void set_name(Identifier *name);
@@ -159,57 +180,48 @@ public:
 
 class StructFieldAssignment : public AstNode {
 public:
-  std::string field_name;
-  std::unique_ptr<AstNode> value;
   StructFieldAssignment() : AstNode(NodeType::StructFieldAssignment){};
 };
 
 class StructFieldAccess : public AstNode {
 public:
-  std::string field_name;
   StructFieldAccess() : AstNode(NodeType::StructFieldAccess){};
 };
 
 class BinaryExpression : public AstNode {
 public:
   Operator op;
-  std::unique_ptr<AstNode> lhs;
-  std::unique_ptr<AstNode> rhs;
   BinaryExpression() : AstNode(NodeType::BinaryExpression){};
   BinaryExpression(Operator *op) : AstNode(NodeType::BinaryExpression){};
   void set_operator(Operator *op);
-  void set_lhs(AstNode *lhs);
-  void set_rhs(AstNode *rhs);
 };
 
 class UnaryExpression : public AstNode {
 public:
   Operator op;
-  std::unique_ptr<AstNode> expression;
   UnaryExpression() : AstNode(NodeType::UnaryExpression){};
   UnaryExpression(Operator *op) : AstNode(NodeType::UnaryExpression){};
   void set_operator(Operator *op);
-  void set_expression(AstNode *expression);
 };
 
 class LetExpression : public AstNode {
 public:
-  Variable *variable;
-  std::unique_ptr<VarType> type;
-  std::unique_ptr<AstNode> expression;
   LetExpression() : AstNode(NodeType::LetExpression){};
+};
+
+class EnumMember : public AstNode {
+public:
+  std::string member_name;
+  std::optional<Variable *> associated_value;
+  EnumMember() : AstNode(NodeType::EnumMember){};
 };
 
 class EnumDefinition : public AstNode {
 public:
   std::string enum_name;
-  std::vector<std::unique_ptr<AstNode>> members;
+  std::vector<AstNode *> members;
   EnumDefinition() : AstNode(NodeType::EnumDefinition){};
-};
-class EnumMember : public AstNode {
-public:
-  std::string member_name;
-  EnumMember() : AstNode(NodeType::EnumMember){};
+  void add_member(AstNode *member);
 };
 
 class EnumMemberList : public AstNode {
@@ -222,24 +234,33 @@ class Statement : public AstNode {
 public:
   std::unique_ptr<AstNode> statement;
   Statement() : AstNode(NodeType::Statement){};
+  std::unique_ptr<AstNode> get_statement();
+  void operator=(AstNode *statement);
+  void set_statement(AstNode *statement);
 };
 
 class Expression : public AstNode {
 public:
   std::unique_ptr<AstNode> expression;
   Expression() : AstNode(NodeType::Expression){};
+  std::unique_ptr<AstNode> get_expression();
+  void operator=(AstNode *statement);
+  void set_expression(AstNode *expression);
 };
 
 class VariableAssignment : public AstNode {
 public:
   Variable *variable;
-  std::unique_ptr<AstNode> expression;
+  Expression expression;
   VariableAssignment() : AstNode(NodeType::VariableAssignment){};
+  void set_variable(Variable *variable);
+  void set_expression(Expression *expression);
 };
 
 class StructDefBody : public AstNode {
 public:
   std::vector<std::unique_ptr<AstNode>> fields;
+  void add_field(AstNode *field);
 };
 
 class Method : public AstNode {

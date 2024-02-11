@@ -1,55 +1,60 @@
 #include "ast_node.hpp"
+#include <cstdlib>
+#include <iostream>
 #include <memory>
+#include <string>
 
-std::unique_ptr<AstNode> AstNode::make_node(NodeType nodetype) {
+AstNode *AstNode::make_node(NodeType nodetype) {
   switch (nodetype) {
   case NodeType::Program:
-    return std::make_unique<Program>();
+    return new Program();
   case NodeType::OpenModule:
-    return std::make_unique<OpenModule>();
+    return new OpenModule();
   case NodeType::Function:
-    return std::make_unique<Function>();
+    return new Function();
   case NodeType::FunctionParameters:
-    return std::make_unique<FunctionParameters>();
+    return new FunctionParameters();
   case NodeType::FunctionReturnType:
-    return std::make_unique<FunctionReturnType>();
+    return new FunctionReturnType();
   case NodeType::FunctionBody:
-    return std::make_unique<FunctionBody>();
+    return new FunctionBody();
   case NodeType::FunctionCall:
-    return std::make_unique<FunctionCall>();
+    return new FunctionCall();
   case NodeType::ReturnStatement:
-    return std::make_unique<ReturnStatement>();
+    return new ReturnStatement();
   case NodeType::StructDefinition:
-    return std::make_unique<StructDefinition>();
+    return new StructDefinition();
   case NodeType::StructDefBody:
-    return std::make_unique<StructDefBody>();
+    return new StructDefBody();
   case NodeType::StructFieldAssignment:
-    return std::make_unique<StructFieldAssignment>();
+    return new StructFieldAssignment();
   case NodeType::StructFieldAccess:
-    return std::make_unique<StructFieldAccess>();
+    return new StructFieldAccess();
   case NodeType::BinaryExpression:
-    return std::make_unique<BinaryExpression>();
+    return new BinaryExpression();
   case NodeType::EnumDefinition:
-    return std::make_unique<EnumDefinition>();
+    return new EnumDefinition();
   case NodeType::EnumMemberList:
-    return std::make_unique<EnumMemberList>();
+    return new EnumMemberList();
   case NodeType::UnaryExpression:
-    return std::make_unique<UnaryExpression>();
+    return new UnaryExpression();
   case NodeType::LetExpression:
-    return std::make_unique<LetExpression>();
+    return new LetExpression();
   case NodeType::VariableAssignment:
-    return std::make_unique<VariableAssignment>();
+    return new VariableAssignment();
   case NodeType::MethodCall:
-    return std::make_unique<MethodCall>();
+    return new MethodCall();
   case NodeType::VarType:
-    return std::make_unique<VarType>();
+    return new VarType();
   case NodeType::Variable:
-    return std::make_unique<Variable>();
+    return new Variable();
   case NodeType::Statement:
-    return std::make_unique<Statement>();
+    return new Statement();
   case NodeType::Expression:
-    return std::make_unique<Expression>();
+    return new Expression();
   }
+  std::cout << "Unknown node type \n";
+  std::exit(1);
 }
 
 VarType new_type(Keyword *type_name) {
@@ -131,4 +136,75 @@ VarType new_type(Keyword *type_name) {
     is_array = true;
   }
   return VarType(is_primitive, is_reference, is_array);
+}
+
+void AstNode::print_node() const {
+  std::cout << "Printing node \n" << this->identifier->value << '\n';
+}
+
+void AstNode::set_left(std::unique_ptr<AstNode> node) {
+  node->set_parent(this);
+  this->left = std::move(node);
+}
+
+AstNode *AstNode::get_left() { return this->left.get(); }
+
+AstNode *AstNode::get_right() { return this->right.get(); }
+
+AstNode *AstNode::get_parent() { return this->parent; }
+
+void AstNode::operator=(AstNode *node) { this->left = std::move(node->left); }
+
+void AstNode::operator=(AstNode &node) { this->left = std::move(node.left); }
+
+void AstNode::operator=(std::unique_ptr<AstNode> node) {
+  this->left = std::move(node);
+}
+
+void AstNode::set_identifier(Identifier *ident) { this->identifier = ident; }
+
+void AstNode::set_parent(AstNode *node) { this->parent = node; }
+
+void AstNode::set_right(std::unique_ptr<AstNode> node) {
+  node->set_parent(this);
+  this->left = std::move(node);
+}
+
+void Function::set_name(Identifier *name) { this->function_name = name->value; }
+
+void Function::set_parameters(FunctionParameters *parameters) {
+  this->parameters = parameters;
+}
+void Function::set_return_type(AstNode *return_type) {
+  this->return_type =
+      std::unique_ptr<VarType>(dynamic_cast<VarType *>(return_type));
+}
+void Function::set_body(AstNode *body) {
+  this->body =
+      std::unique_ptr<FunctionBody>(dynamic_cast<FunctionBody *>(body));
+}
+void FunctionCall::set_function_name(Function *function_name) {
+  this->function_name = function_name;
+}
+void FunctionCall::set_arguments(FunctionArguments *arguments) {
+  this->arguments = arguments;
+}
+
+void Variable::set_type(Keyword *type) { VarType newtype = new_type(type); }
+void VariableAssignment::set_variable(Variable *variable) {
+  this->variable = variable;
+}
+
+void VariableAssignment::set_expression(Expression *expression) {
+  this->expression = expression;
+}
+void ReturnStatement::set_expression(AstNode *expression) {
+  this->expression = expression;
+}
+void StructDefinition::set_name(Identifier *name) {
+  this->struct_name = name->value;
+}
+
+void StructDefBody::add_field(AstNode *field) {
+  this->fields.push_back(std::unique_ptr<AstNode>(field));
 }
