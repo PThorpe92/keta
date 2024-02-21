@@ -7,11 +7,8 @@ enum class TokenType {
   None,
   Identifier,
   Operator,
-  StringLiteral,
   Keyword,
-  CharLiteral,
-  NumberLiteral,
-  FloatLiteral,
+  Literal,
   EOFToken,
 };
 
@@ -88,7 +85,6 @@ enum class KeywordType {
   Impl,
   Type,
   Float,
-  For,
   Iter,
   Rec,
   Func,
@@ -104,6 +100,20 @@ enum class KeywordType {
   CharArr,
   Char,
 };
+enum class LiteralType { String, Number, Char, Float };
+
+struct Literal {
+  std::string value;
+  LiteralType type;
+  Literal(std::string value, LiteralType type) : value(value), type(type) {}
+  ~Literal() = default;
+  void operator=(const std::string &value) { this->value = value; }
+  void operator=(const Literal &other) {
+    value = other.value;
+    type = other.type;
+  }
+};
+
 struct Keyword {
   KeywordType value;
   static Keyword keyword_from_string(std::string value);
@@ -128,72 +138,7 @@ struct Operator {
   bool operator!=(const Operator &other) const { return value != other.value; }
 };
 
-struct StringLiteral {
-  std::string value;
-  StringLiteral(std::string value) : value(value) {}
-  ~StringLiteral() = default;
-
-  static StringLiteral string_literal_from_string(std::string value);
-  bool operator==(const StringLiteral &other) const {
-    return value == other.value;
-  }
-  bool operator!=(const StringLiteral &other) const {
-    return value != other.value;
-  }
-};
-
-struct CharLiteral {
-  char value;
-  CharLiteral(char value) : value(value) {}
-  ~CharLiteral() = default;
-
-  static CharLiteral char_literal_from_string(std::string value);
-  bool operator==(const CharLiteral &other) const {
-    return value == other.value;
-  }
-  bool operator!=(const CharLiteral &other) const {
-    return value != other.value;
-  }
-};
-
-struct NumberLiteral {
-  std::string value;
-
-  NumberLiteral(std::string value) : value(value) {}
-  ~NumberLiteral() = default;
-
-  NumberLiteral number_literal_from_string(std::string value);
-  bool operator==(const NumberLiteral &other) const {
-    return value == other.value;
-  }
-  bool operator!=(const NumberLiteral &other) const {
-    return value != other.value;
-  }
-  bool operator<(const NumberLiteral &other) const {
-    return value < other.value;
-  }
-  bool operator>(const NumberLiteral &other) const {
-    return value > other.value;
-  }
-  bool operator<=(const NumberLiteral &other) const {
-    return value <= other.value;
-  }
-  bool operator>=(const NumberLiteral &other) const {
-    return value >= other.value;
-  }
-};
-
-struct FloatLiteral {
-  std::string value;
-  FloatLiteral(std::string value) : value(value) {}
-  ~FloatLiteral() = default;
-
-  static FloatLiteral float_literal_from_string(std::string value);
-};
-
-using TokenData =
-    std::variant<Identifier, Keyword, StringLiteral, NumberLiteral,
-                 FloatLiteral, Operator, CharLiteral>;
+using TokenData = std::variant<Identifier, Keyword, Operator, Literal>;
 
 class Token {
 public:
@@ -219,17 +164,27 @@ public:
   static bool are_equal(const Token &lhs, const Token &rhs);
   static Token make_identifier(std::string value, uint32_t line);
   static Token make_operator(OperatorType value, uint32_t line);
-  static Token make_string_literal(std::string value, uint32_t line);
-  static Token make_char_literal(char value, uint32_t line);
-  static Token make_number_literal(std::string value, uint32_t line);
+  static Token make_string_literal(const std::string &value, uint32_t line);
+  static Token make_char_literal(const std::string &value, uint32_t line);
+  static Token make_number_literal(const std::string &value, uint32_t line);
   static Token make_token(TokenType kind, TokenData value, uint32_t line);
+  bool is_literal() const;
+  bool is_string_literal() const;
+  bool is_char_literal() const;
+  bool is_number_literal() const;
+  bool is_float_literal() const;
+  bool is_identifier() const;
+  bool is_operator() const;
+  bool is_keyword() const;
+  bool is_type() const;
+  bool is_operator_type(OperatorType type) const;
   static std::string token_type_string(TokenType kind);
   static std::string keyword_to_string(KeywordType type);
   static std::string operator_to_string(OperatorType type);
-  static std::string number_literal_to_string(NumberLiteral num);
-  static std::string string_literal_to_string(StringLiteral str);
-  static std::string char_literal_to_string(CharLiteral chr);
-  static std::string float_literal_to_string(FloatLiteral flt);
+  static std::string number_literal_to_string(Literal num);
+  static std::string string_literal_to_string(Literal str);
+  static std::string char_literal_to_string(Literal chr);
+  static std::string float_literal_to_string(Literal flt);
 };
 
 struct TokenPrinter {
@@ -242,17 +197,20 @@ struct TokenPrinter {
     std::printf("Keyword: %s\n", keyword.data());
   }
 
-  void operator()(const NumberLiteral &num) const {
-    std::printf("Number Literal: %s\n", num.value.data());
-  }
-  void operator()(const StringLiteral &str) const {
-    std::printf("StringLit: %s\n", str.value.data());
-  }
-  void operator()(const FloatLiteral &flt) const {
-    std::printf("FloatLit: %s\n", flt.value.data());
-  }
-  void operator()(const CharLiteral &chr) const {
-    std::printf("CharLit: %s\n", &chr.value);
+  void operator()(const Literal &num) const {
+    switch (num.type) {
+    case LiteralType::String:
+      std::printf("String Literal: %s\n", num.value.data());
+      break;
+    case LiteralType::Char:
+      std::printf("Char Literal: %s\n", num.value.data());
+    case LiteralType::Float:
+      std::printf("Float Literal: %s\n", num.value.data());
+      break;
+    case LiteralType::Number:
+      std::printf("Number Literal: %s\n", num.value.data());
+      break;
+    }
   }
   void operator()(const Operator &op) const {
     auto op_type = Token::operator_to_string(op.value);

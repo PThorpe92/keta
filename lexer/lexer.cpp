@@ -106,6 +106,12 @@ char Lexer::peek() const {
     return this->input[this->position + 1];
   }
 }
+void Lexer::print_tokens() const {
+  TokenPrinter printer;
+  for (auto &tokenspan : this->tokens) {
+    printer.print_token_data(tokenspan.token);
+  }
+}
 
 void Lexer::parse_tokens() {
   if (is_space(this->current_char)) {

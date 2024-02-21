@@ -55,9 +55,6 @@ Keyword Keyword::keyword_from_string(std::string value) {
   if (value.compare("float") == 0) {
     return Keyword{KeywordType::Float};
   }
-  if (value.compare("for") == 0) {
-    return Keyword{KeywordType::For};
-  }
   if (value.compare("rec") == 0) {
     return Keyword{KeywordType::Rec};
   }
@@ -156,9 +153,6 @@ std::string Token::keyword_to_string(KeywordType type) {
     break;
   case KeywordType::Float:
     keyword = "float";
-    break;
-  case KeywordType::For:
-    keyword = "for";
     break;
   case KeywordType::Rec:
     keyword = "rec";
@@ -388,6 +382,45 @@ Token Token::make_identifier(std::string value, uint32_t line) {
   }
 }
 
+bool Token::is_operator_type(OperatorType op) const {
+  auto operator_data = std::get<Operator>(this->data);
+  return operator_data.value == op;
+}
+
+bool Token::is_literal() const { return this->kind == TokenType::Literal; }
+bool Token::is_string_literal() const {
+  return this->kind == TokenType::Literal &&
+         std::get<Literal>(this->data).type == LiteralType::String;
+}
+bool Token::is_number_literal() const {
+  return this->kind == TokenType::Literal &&
+         std::get<Literal>(this->data).type == LiteralType::Number;
+}
+bool Token::is_char_literal() const {
+  return this->kind == TokenType::Literal &&
+         std::get<Literal>(this->data).type == LiteralType::Char;
+}
+bool Token::is_float_literal() const {
+  return this->kind == TokenType::Literal &&
+         std::get<Literal>(this->data).type == LiteralType::Float;
+}
+bool Token::is_identifier() const {
+  return this->kind == TokenType::Identifier;
+}
+bool Token::is_operator() const { return this->kind == TokenType::Operator; }
+bool Token::is_keyword() const { return this->kind == TokenType::Keyword; }
+
+bool Token::is_type() const {
+  if (this->kind != TokenType::Keyword) {
+    return false;
+  }
+
+  auto keyword = std::get<Keyword>(this->data).value;
+  return keyword == KeywordType::Int || keyword == KeywordType::Bool ||
+         keyword == KeywordType::String || keyword == KeywordType::Enum ||
+         keyword == KeywordType::Float || keyword == KeywordType::Char;
+}
+
 bool Token::are_equal(const Token &lhs, const Token &rhs) {
   if (lhs.kind != rhs.kind) {
     return false;
@@ -400,21 +433,9 @@ bool Token::are_equal(const Token &lhs, const Token &rhs) {
     return std::get<Keyword>(lhs.data).value ==
            std::get<Keyword>(rhs.data).value;
   }
-  if (lhs.kind == TokenType::NumberLiteral) {
-    return std::get<NumberLiteral>(lhs.data).value ==
-           std::get<NumberLiteral>(rhs.data).value;
-  }
-  if (lhs.kind == TokenType::StringLiteral) {
-    return std::get<StringLiteral>(lhs.data).value ==
-           std::get<StringLiteral>(rhs.data).value;
-  }
-  if (lhs.kind == TokenType::CharLiteral) {
-    return std::get<CharLiteral>(lhs.data).value ==
-           std::get<CharLiteral>(rhs.data).value;
-  }
-  if (lhs.kind == TokenType::FloatLiteral) {
-    return std::get<FloatLiteral>(lhs.data).value ==
-           std::get<FloatLiteral>(rhs.data).value;
+  if (lhs.kind == TokenType::Literal) {
+    return std::get<Literal>(lhs.data).value ==
+           std::get<Literal>(rhs.data).value;
   }
   if (lhs.kind == TokenType::Operator) {
     return std::get<Operator>(lhs.data).value ==
@@ -430,20 +451,21 @@ Token Token::make_operator(OperatorType value, uint32_t line) {
   return Token{TokenType::Operator, Operator{value}, line};
 }
 
-Token Token::make_string_literal(std::string value, uint32_t line) {
-  return Token{TokenType::StringLiteral, StringLiteral{value}, line};
+Token Token::make_string_literal(const std::string &value, uint32_t line) {
+  return Token{TokenType::Literal, Literal{value, LiteralType::String}, line};
 }
 
-Token Token::make_char_literal(char value, uint32_t line) {
-  return Token{TokenType::CharLiteral, CharLiteral(value), line};
+Token Token::make_char_literal(const std::string &value, uint32_t line) {
+  return Token{TokenType::Literal, Literal{value, LiteralType::Char}, line};
 }
 
-Token Token::make_number_literal(std::string value, uint32_t line) {
+Token Token::make_number_literal(const std::string &value, uint32_t line) {
   if (value.find('.') != std::string::npos) {
-    return Token{TokenType::FloatLiteral, FloatLiteral{value}, line};
+    return Token{TokenType::Literal, Literal{value, LiteralType::Float}, line};
   }
-  return Token{TokenType::NumberLiteral, NumberLiteral{value}, line};
+  return Token{TokenType::Literal, Literal{value, LiteralType::Number}, line};
 }
+
 std::string Token::token_type_string(TokenType kind) {
   if (kind == TokenType::Identifier) {
     return std::string("Identifier");
@@ -451,17 +473,8 @@ std::string Token::token_type_string(TokenType kind) {
   if (kind == TokenType::Keyword) {
     return std::string("Keyword");
   }
-  if (kind == TokenType::NumberLiteral) {
-    return std::string("NumberLiteral");
-  }
-  if (kind == TokenType::StringLiteral) {
-    return std::string("StringLiteral");
-  }
-  if (kind == TokenType::CharLiteral) {
-    return std::string("CharLiteral");
-  }
-  if (kind == TokenType::FloatLiteral) {
-    return std::string("FloatLiteral");
+  if (kind == TokenType::Literal) {
+    return std::string("Literal");
   }
   if (kind == TokenType::Operator) {
     return std::string("Operator");

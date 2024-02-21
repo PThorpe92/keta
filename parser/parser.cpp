@@ -62,19 +62,29 @@ void Parser::assert_is_identifier() {
   }
 }
 
-void Parser::assert_is_number() {
-  if (this->current_token.token.kind != TokenType::NumberLiteral) {
-    std::cerr << "Expected a number literal on line: "
-              << this->current_token.token.line << " but got " << '\n';
-    TokenPrinter *printer;
-    printer->print_token_data(this->current_token.token);
-    std::exit(1);
+void Parser::assert_is_number_literal() {
+  if (this->current_token.token.kind != TokenType::Literal) {
+    auto number = std::get_if<Literal>(&this->current_token.token.data);
+    if (number != nullptr) {
+      if (number->type != LiteralType::Number) {
+        std::cerr << "Expected a number literal on line: "
+                  << this->current_token.token.line << " but got " << '\n';
+        TokenPrinter *printer;
+        printer->print_token_data(this->current_token.token);
+        std::exit(1);
+      }
+    } else {
+      std::cerr << "Expected a number literal on line: "
+                << this->current_token.token.line << " but got " << '\n';
+      TokenPrinter *printer;
+      printer->print_token_data(this->current_token.token);
+      std::exit(1);
+    }
   }
 }
 
-void Parser::assert_number(NumberLiteral *num) {
-  NumberLiteral *number =
-      std::get_if<NumberLiteral>(&this->current_token.token.data);
+void Parser::assert_number(Literal *num) {
+  Literal *number = std::get_if<Literal>(&this->current_token.token.data);
   if (number == nullptr) {
     std::cerr << "Expected number literal: " << num->value
               << " on line: " << this->current_token.token.line << " but got "
@@ -137,12 +147,7 @@ void Parser::print_ast_recursive(const AstNode *node) const {
     print_ast_recursive(node->right.get());
   }
 }
-/*
- *               LetExpression
- *               /           \
- *           Variable      Expression
- *         x          =         7
- */
+
 std::unique_ptr<AstNode> Parser::parse_let() {
   // assert_keyword will advance the token
   assert_keyword(KeywordType::Let);
@@ -152,7 +157,7 @@ std::unique_ptr<AstNode> Parser::parse_let() {
   this->advance();
   this->assert_operator(OperatorType::Eq);
   let_node->set_right(parse_expression());
-  return let_node;
+  return std::unique_ptr<AstNode>(let_node);
 }
 
 std::unique_ptr<AstNode> Parser::parse_var_type() {
@@ -168,75 +173,111 @@ std::unique_ptr<AstNode> Parser::parse_var_type() {
         std::get_if<Keyword>(&this->current_token.token.data)->value);
     Keyword *type = std::get_if<Keyword>(&this->current_token.token.data);
     std::get_if<Keyword>(&this->current_token.token.data);
-    return variable;
+    return std::unique_ptr<AstNode>(variable);
+  } else {
+    std::cerr << "Failed to parse var type\n";
+    std::exit(1);
   }
+}
 
-  void Parser::print_ast() const { print_ast_recursive(this->root.get()); }
-
-  void Parser::parse() {
-    if (this->current_token.token.kind == TokenType::EOFToken) {
-      return;
+std::unique_ptr<FunctionArguments> Parser::parse_function_arguments() {
+  this->assert_operator(OperatorType::LParen);
+  this->advance();
+  auto node = std::make_unique<FunctionArguments>();
+  while (!this->current_token.token.is_operator_type(OperatorType::RParen)) {
+    if (this->current_token.token.kind == TokenType::Identifier) {
+      // if its an identifier, we can assume its a variable, add it to the list
+      Variable *variable = static_cast<Variable *>(
+          AstNode::make_node(AstNode::NodeType::Variable));
+      variable->set_identifier(
+          std::get_if<Identifier>(&this->current_token.token.data));
+      node->add_argument(std::move(variable));
+      this->advance();
+    } else if (this->current_token.token.is_literal()) {
+      // if its a literal, we can assume its a constant, add it to the list
+      auto val = std::get_if<Literal>(&this->current_token.token.data);
+      if (val != nullptr) {
+        ParsedLiteral *literal = new ParsedLiteral(*val);
+        literal->set_value(this->current_token.token);
+        node->set_left(std::move(literal));
+        this->advance();
+      }
+    } else if (this->current_token.token.is_operator_type(
+                   OperatorType::Comma)) {
+      continue;
     }
-    switch (this->current_token.token.kind) {
-    case TokenType::Keyword:
-      const Keyword *keywordPtr =
-          std::get_if<Keyword>(&current_token.token.data);
-      if (keywordPtr != nullptr) {
-        const Keyword &keyword = *keywordPtr;
-        switch (keyword.value) {
-        case KeywordType::Open:
-          this->current_node->set_left(
-              AstNode::make_node(AstNode::NodeType::OpenModule));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::Let:
-          this->current_node->set_left(
-              AstNode::make_node(AstNode::NodeType::LetExpression));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::Fn:
-          this->current_node->set_left(
-              AstNode::make_node(AstNode::NodeType::Function));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::Return:
-          this->current_node->set_left(
-              AstNode::make_node(AstNode::NodeType::ReturnStatement));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::Enum:
-          this->current_node->set_left(
-              AstNode::make_node(AstNode::NodeType::EnumDefinition));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::Struct:
-          this->root->set_left(AstNode::make_node(AstNode::NodeType::Struct));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::If:
-          this->root->set_left(AstNode::make_node(AstNode::NodeType::If));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::Else:
-          this->root->set_left(AstNode::make_node(AstNode::NodeType::Else));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::While:
-          this->root->set_left(AstNode::make_node(AstNode::NodeType::While));
-          this->advance();
-          this->parse();
-          break;
-        case KeywordType::For:
-          this->root->set_left(AstNode::make_node(AstNode::NodeType::For));
-          this->advance();
-          this->parse();
-          break;
-        }
+  }
+  this->assert_operator(OperatorType::RParen);
+  return node;
+}
+
+void Parser::print_ast() const { print_ast_recursive(this->root); }
+
+void Parser::parse() {
+  if (this->current_token.token.kind == TokenType::EOFToken) {
+    return;
+  }
+  switch (this->current_token.token.kind) {
+  case TokenType::Keyword:
+    const Keyword *keywordPtr = std::get_if<Keyword>(&current_token.token.data);
+    if (keywordPtr != nullptr) {
+      const Keyword &keyword = *keywordPtr;
+      switch (keyword.value) {
+      case KeywordType::Open:
+        this->current_node->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::OpenModule)));
+        this->advance();
+        this->parse();
+        break;
+      case KeywordType::Let:
+        this->current_node->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::LetExpression)));
+        this->advance();
+        this->parse();
+        break;
+      case KeywordType::Fn:
+        this->current_node->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::Function)));
+        this->advance();
+        this->parse();
+        break;
+      case KeywordType::Return:
+        this->current_node->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::ReturnStatement)));
+        this->advance();
+        this->parse();
+        break;
+      case KeywordType::Enum:
+        this->current_node->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::EnumDefinition)));
+        this->advance();
+        this->parse();
+        break;
+      case KeywordType::Struct:
+        this->root->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::EnumDefinition)));
+        this->advance();
+        this->parse();
+        break;
+      case KeywordType::If:
+        this->root->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::EnumDefinition)));
+        this->advance();
+        this->parse();
+        break;
+      case KeywordType::Else:
+        this->root->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::ElseBlock)));
+        this->advance();
+        this->parse();
+        break;
+      case KeywordType::Match:
+        this->root->set_left(std::unique_ptr<AstNode>(
+            AstNode::make_node(AstNode::NodeType::MatchExpression)));
+        this->advance();
+        this->parse();
+        break;
+      }
+    }
+  }
+}

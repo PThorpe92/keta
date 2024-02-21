@@ -9,7 +9,6 @@ int main(int argc, char *argv[]) {
               << std::endl;
     return 1;
   }
-
   std::string filename = argv[1];
   std::ifstream file(filename);
   if (!file) {
@@ -19,13 +18,10 @@ int main(int argc, char *argv[]) {
   std::ostringstream oss;
   oss << file.rdbuf();
   std::string input = oss.str();
+  file.close();
 
   Lexer new_lexer(input);
   new_lexer.parse_tokens();
-  std::cout << new_lexer.tokens.size() << std::endl;
-  TokenPrinter printer;
-  for (auto &tokenspan : new_lexer.tokens) {
-    printer.print_token_data(tokenspan.token);
-  }
+  new_lexer.print_tokens();
   return 0;
 }

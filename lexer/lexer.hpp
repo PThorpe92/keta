@@ -36,4 +36,5 @@ public:
   Token build_number();
   Token build_string();
   Token build_operator();
+  void print_tokens() const;
 };

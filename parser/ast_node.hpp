@@ -17,6 +17,7 @@ public:
     FunctionBody,
     FunctionCall,
     ImplForBlock,
+    Literal,
     ReturnStatement,
     StructDefinition,
     StructDefBody,
@@ -28,6 +29,7 @@ public:
     EnumDefinition,
     EnumMemberList,
     UnaryExpression,
+    MatchExpression,
     LetExpression,
     VariableTypeDef,
     VariableAssignment,
@@ -35,6 +37,7 @@ public:
     TypeDeclaration,
     VarType,
     Variable,
+    ElseBlock,
     Statement,
     Expression,
     PrefixOperator,
@@ -57,6 +60,9 @@ public:
   void operator=(AstNode *node);
   void operator=(AstNode &node);
   void operator=(std::unique_ptr<AstNode> node);
+  void operator=(std::unique_ptr<AstNode> &node);
+  void set_left(AstNode *node);
+  void set_right(AstNode *node);
   virtual void set_left(std::unique_ptr<AstNode> node);
   virtual void set_right(std::unique_ptr<AstNode> node);
   virtual void set_identifier(Identifier *ident);
@@ -101,6 +107,7 @@ public:
 class FunctionParameters : public AstNode {
 public:
   std::vector<std::unique_ptr<AstNode>> parameters;
+  void add_parameter(AstNode *parameter);
   FunctionParameters() : AstNode(NodeType::FunctionParameters){};
 };
 
@@ -168,6 +175,12 @@ public:
   void set_type(VarType *type);
   void set_mutable(bool is_mutable);
 };
+class ElseBlock : public AstNode {
+public:
+  std::unique_ptr<AstNode> body;
+  ElseBlock() : AstNode(NodeType::ElseBlock){};
+  void set_body(AstNode *body);
+};
 
 class StructDefinition : public AstNode {
 public:
@@ -176,6 +189,13 @@ public:
   StructDefinition() : AstNode(NodeType::StructDefinition){};
   void add_field(StructField *field);
   void set_name(Identifier *name);
+};
+class MatchExpression : public AstNode {
+public:
+  std::unique_ptr<AstNode> expression;
+  std::vector<std::unique_ptr<AstNode>> match_cases;
+  void set_expression(AstNode *expression);
+  void add_match_case(AstNode *match_case);
 };
 
 class StructFieldAssignment : public AstNode {
@@ -186,6 +206,13 @@ public:
 class StructFieldAccess : public AstNode {
 public:
   StructFieldAccess() : AstNode(NodeType::StructFieldAccess){};
+};
+
+class ParsedLiteral : public AstNode {
+public:
+  Literal value;
+  ParsedLiteral(Literal value) : AstNode(NodeType::Literal), value(value){};
+  void set_value(Token &value);
 };
 
 class BinaryExpression : public AstNode {

@@ -138,6 +138,15 @@ VarType new_type(Keyword *type_name) {
   return VarType(is_primitive, is_reference, is_array);
 }
 
+void ParsedLiteral::set_value(Token &val) {
+  auto value = std::get<Literal>(val.data);
+  this->value = value;
+}
+
+void FunctionParameters::add_parameter(AstNode *node) {
+  this->parameters.push_back(std::unique_ptr<AstNode>(node));
+}
+
 void AstNode::print_node() const {
   std::cout << "Printing node \n" << this->identifier->value << '\n';
 }
