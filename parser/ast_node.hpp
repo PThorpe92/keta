@@ -134,6 +134,8 @@ class FunctionBody : public AstNode {
 public:
   std::vector<std::unique_ptr<AstNode>> statements;
   FunctionBody() : AstNode(NodeType::FunctionBody){};
+  void add_statement(std::unique_ptr<AstNode> statement);
+  std::vector<std::unique_ptr<AstNode>> get_statements();
 };
 
 class FunctionArguments : public AstNode {
@@ -211,7 +213,7 @@ public:
 class ParsedLiteral : public AstNode {
 public:
   Literal value;
-  ParsedLiteral(Literal value) : AstNode(NodeType::Literal), value(value){};
+  ParsedLiteral(Literal &value) : AstNode(NodeType::Literal), value(value){};
   void set_value(Token &value);
 };
 

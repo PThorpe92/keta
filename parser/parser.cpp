@@ -3,7 +3,6 @@
 #include <memory>
 
 void Parser::advance() {
-  // account for EOF token
   if (this->index >= this->tokens.size() + 2) {
     return;
   }
@@ -148,10 +147,12 @@ void Parser::print_ast_recursive(const AstNode *node) const {
   }
 }
 
+// let x: int = 5
 std::unique_ptr<AstNode> Parser::parse_let() {
   // assert_keyword will advance the token
   assert_keyword(KeywordType::Let);
   auto let_node = AstNode::make_node(AstNode::NodeType::LetExpression);
+  this->advance();
   this->assert_is_identifier();
   let_node->set_left(parse_var_type());
   this->advance();
@@ -159,10 +160,10 @@ std::unique_ptr<AstNode> Parser::parse_let() {
   let_node->set_right(parse_expression());
   return std::unique_ptr<AstNode>(let_node);
 }
-
+// x: int
 std::unique_ptr<AstNode> Parser::parse_var_type() {
   this->assert_is_identifier();
-  VarType *variable = static_cast<VarType *>(
+  auto variable = static_cast<VarType *>(
       AstNode::make_node(AstNode::NodeType::VariableTypeDef));
   if (variable != nullptr) {
     variable->set_identifier(
@@ -179,7 +180,7 @@ std::unique_ptr<AstNode> Parser::parse_var_type() {
     std::exit(1);
   }
 }
-
+// ()
 std::unique_ptr<FunctionArguments> Parser::parse_function_arguments() {
   this->assert_operator(OperatorType::LParen);
   this->advance();
@@ -187,11 +188,11 @@ std::unique_ptr<FunctionArguments> Parser::parse_function_arguments() {
   while (!this->current_token.token.is_operator_type(OperatorType::RParen)) {
     if (this->current_token.token.kind == TokenType::Identifier) {
       // if its an identifier, we can assume its a variable, add it to the list
-      Variable *variable = static_cast<Variable *>(
+      auto variable = static_cast<Variable *>(
           AstNode::make_node(AstNode::NodeType::Variable));
       variable->set_identifier(
           std::get_if<Identifier>(&this->current_token.token.data));
-      node->add_argument(std::move(variable));
+      node->add_argument(variable);
       this->advance();
     } else if (this->current_token.token.is_literal()) {
       // if its a literal, we can assume its a constant, add it to the list
@@ -208,6 +209,68 @@ std::unique_ptr<FunctionArguments> Parser::parse_function_arguments() {
     }
   }
   this->assert_operator(OperatorType::RParen);
+  this->advance();
+  return node;
+}
+std::unique_ptr<AstNode> Parser::parse_function() {
+  this->assert_keyword(KeywordType::Fn);
+  this->advance();
+  auto function = std::make_unique<Function>();
+  this->assert_is_identifier();
+  function->set_identifier(
+      std::get_if<Identifier>(&this->current_token.token.data));
+  this->advance();
+  function->set_left(parse_function_arguments());
+  this->assert_operator(OperatorType::Arrow);
+  this->advance();
+  function->set_right(parse_expression());
+  return function;
+}
+
+std::unique_ptr<AstNode> Parser::parse_return_statement() {
+  this->assert_keyword(KeywordType::Return);
+  this->advance();
+  auto return_node = std::make_unique<ReturnStatement>();
+  return_node->set_left(parse_expression());
+  return return_node;
+}
+
+std::unique_ptr<AstNode> Parser::parse_expression() {
+  if (this->current_token.token.kind == TokenType::Literal) {
+    auto val = std::get_if<Literal>(&this->current_token.token.data);
+    if (val != nullptr) {
+      auto literal = std::make_unique<ParsedLiteral>(*val);
+      this->advance();
+      return literal;
+    }
+  } else if (this->current_token.token.kind == TokenType::Identifier) {
+    auto identifier = std::get_if<Identifier>(&this->current_token.token.data);
+    if (identifier != nullptr) {
+      auto variable = std::make_unique<Variable>();
+      variable->set_identifier(identifier);
+      this->advance();
+      return variable;
+    }
+  }
+  return nullptr;
+}
+
+std::unique_ptr<AstNode> Parser::parse_function_body() {
+  this->assert_operator(OperatorType::LBrace);
+  this->advance();
+  auto node = std::make_unique<FunctionBody>();
+  while (!this->current_token.token.is_operator_type(OperatorType::RBrace)) {
+    node->add_statement(parse_expression());
+    auto return_node = std::get_if<Keyword>(&this->current_token.token.data);
+    if (return_node != nullptr) {
+      if (return_node->value == KeywordType::Return) {
+        node->set_right(parse_return_statement());
+      }
+    }
+  }
+
+  this->assert_operator(OperatorType::RBrace);
+  this->advance();
   return node;
 }
 

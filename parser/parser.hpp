@@ -45,14 +45,17 @@ public:
   // bootleg typechecking for now ;)
   void assert_type(KeywordType type);
   void parse();
-  std::unique_ptr<FunctionArguments> parse_function_arguments();
-  std::unique_ptr<Expression> parse_expression();
   std::unique_ptr<AstNode> parse_let(), parse_function(), parse_open_module(),
       parse_var_type(), parse_variable(), parse_function_parameters(),
       parse_return_type(), parse_function_body(), parse_function_call(),
       parse_number_literal(), parse_string_literal(), parse_char_literal(),
       parse_operator(), parse_identifier(), parse_variable_assignment(),
-      parse_return_statement();
+      parse_return_statement(), parse_expression(),
+      parse_expression_statement(), parse_if_statement(),
+      parse_function_declaration(), parse_struct_declaration(),
+      parse_enum_declaration(), parse_enum_case(), parse_enum_body(),
+      parse_struct_body(), parse_struct_member(),
+      parse_struct_member_declaration();
   void parse_ast();
   void print_ast() const;
   void print_tokens() const;
