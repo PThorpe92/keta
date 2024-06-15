@@ -1,5 +1,5 @@
 use crate::parser::ParsedSpan;
-use crate::token::{self, Literal};
+use crate::token::{self, DataType};
 use std::boxed::Box;
 use std::collections::HashMap;
 
@@ -9,7 +9,7 @@ pub struct Program {
     pub body: Vec<AstNode>,
 }
 
-pub struct EvaluationContext(HashMap<String, Literal>);
+pub struct EvaluationContext(pub HashMap<String, Option<DataType>>);
 
 pub enum Precedence {
     Lowest,
@@ -62,7 +62,7 @@ pub enum NodeType {
 
 #[derive(Debug)]
 pub enum Expression {
-    Literal(Literal),
+    Literal(DataType),
     Identifier(String),
     BinaryOp(Box<BinaryOp>),
     UnaryOp(Box<UnaryOp>),
@@ -72,6 +72,7 @@ pub enum Expression {
     FnArgs(Vec<FnArg>),
     FnParams(Vec<FnParam>),
     DataType(DataType),
+    IfStatement(Box<IfStatement>),
 }
 
 #[derive(Debug)]
@@ -95,7 +96,8 @@ pub struct Assignment {
 
 #[derive(Debug)]
 pub struct IfStatement {
-    pub condition: Expression,
+    pub span: ParsedSpan,
+    pub condition: BinaryOp,
     pub consequence: Block,
     pub alternative: Option<Block>,
 }
@@ -120,7 +122,7 @@ pub struct FnCall {
 }
 #[derive(Debug)]
 pub enum FnArg {
-    Literal(crate::token::Literal),
+    DataType(crate::token::DataType),
     Variable(Identifier),
 }
 
@@ -140,6 +142,13 @@ pub enum Definition {
     Variant(VariantDef),
     Function(FunctionDef),
     Struct(StructDef),
+    Union(UnionDef),
+}
+
+#[derive(Debug)]
+pub struct UnionDef {
+    pub name: Identifier,
+    pub variants: Vec<StructField>,
 }
 
 #[derive(Debug)]
@@ -192,43 +201,4 @@ pub struct StructField {
 pub struct FnParam {
     pub name: Identifier,
     pub data_type: DataType,
-}
-
-#[derive(Debug)]
-pub enum DataType {
-    Integer,
-    Boolean,
-    Float,
-    String,
-    Struct,
-    Enum,
-    Reference(Box<DataType>),
-    UserDefined(Identifier),
-    Result(Box<DataType>),
-    Option(Box<DataType>),
-}
-
-impl DataType {
-    pub fn from_token_type(token_type: &token::TokenType) -> Self {
-        match token_type {
-            token::TokenType::Keyword(kw) => match kw {
-                token::Keyword::Int => Self::Integer,
-                token::Keyword::Bool => Self::Boolean,
-                token::Keyword:: => Self::Float,
-                token::Keyword::String => Self::String,
-                _ => Self::UserDefined(Identifier(kw.to_string())),
-            },
-            token::TokenType::Identifier(ident) => Self::UserDefined(Identifier(ident.to_string())),
-            _ => Self::Integer,
-        }
-    }
-    pub fn from_str(ident: &str) -> Self {
-        match ident {
-            "int" => Self::Integer,
-            "bool" => Self::Boolean,
-            "float" => Self::Float,
-            "string" => Self::String,
-            _ => Self::UserDefined(Identifier(ident.to_string())),
-        }
-    }
 }

@@ -14,9 +14,9 @@ pub struct Span {
     pub end: usize,
     pub line: usize,
 }
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
-    Literal(Literal),
+    Literal(DataType),
     Keyword(Keyword),
     Identifier(String),
     LParen,
@@ -102,27 +102,27 @@ impl TryFrom<TokenType> for Operator {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Literal {
+#[derive(Debug, Clone, PartialEq)]
+pub enum DataType {
     String(String),
     Integer(i64),
     Float(f64),
     Boolean(bool),
     Char(char),
-    Array(Vec<Box<Literal>>),
-    Reference(Box<Literal>),
+    Array(Vec<Box<DataType>>),
+    Reference(Box<DataType>),
 }
 
-impl Literal {
-    pub fn from_token_type(token_type: TokenType) -> Result<Self, Box<dyn Error>> {
+impl DataType {
+    pub fn from_token_type(token_type: &TokenType) -> Result<Self, Box<dyn Error>> {
         match token_type {
-            TokenType::Literal(lit) => Ok(lit),
-            _ => Err("Invalid literal".into()),
+            TokenType::Literal(lit) => Ok(lit.clone()),
+            _ => Err("Invalid DataType".into()),
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Keyword {
     Const,
     Let,
@@ -152,6 +152,17 @@ pub enum Keyword {
     Yield,
     Import,
     Return,
+}
+
+impl Display for Keyword {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+impl Display for DataType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 impl TokenType {
     pub fn is_type(&self) -> bool {
@@ -196,95 +207,71 @@ impl Token {
         }
     }
 }
-impl Into<&str> for TokenType {
-    fn into(self) -> &'static str {
-        match self {
-            Self::LParen => "(",
-            Self::RParen => ")",
-            Self::LBrace => "{",
-            Self::RBrace => "}",
-            Self::LBracket => "[",
-            Self::RBracket => "]",
-            Self::Underscore => "_",
-            Self::Asterisk => "*",
-            Self::Semicolon => ";",
-            Self::Colon => ":",
-            Self::ColonColon => "::",
-            Self::Plus => "+",
-            Self::Minus => "-",
-            Self::Not => "!",
-            Self::Equals => "=",
-            Self::Lt => "<",
-            Self::Gt => ">",
-            Self::Pipe => "|",
-            Self::EqEq => "==",
-            Self::NotEq => "!=",
-            Self::Mod => "%",
-            Self::Caret => "^",
-            Self::LogicalAnd => "&&",
-            Self::LogicalOr => "||",
-            Self::Arrow => "->",
-            Self::GtEquals => ">=",
-            Self::MinusEquals => "-=",
-            Self::StarStar => "**",
-            Self::MulEquals => "*=",
-            Self::DivEquals => "/=",
-            Self::PlusEquals => "+=",
-            Self::LeftShift => "<<",
-            Self::RightShift => ">>",
-            Self::Ternary => "?",
-            Self::LtEquals => "<=",
-            Self::Ampersand => "&",
-            Self::Period => ".",
-            Self::Comma => ",",
-            Self::EOF => "EOF",
-            Self::Whitespace => "Whitespace",
-            Self::Literal(lit) => match lit {
-                Literal::String(str) => format!("String: {}", str).as_str(),
-                Literal::Integer(int) => format!("Integer: {}", int).as_str(),
-                Literal::Float(float) => format!("Float: {}", float).as_str(),
-                Literal::Boolean(b) => format!("Boolean: {}", b).as_str(),
-                Literal::Char(ch) => format!("Char: {}", ch).as_str(),
-                Literal::Array(lit) => format!("Array<{:?}>", lit[0]).as_str(),
-                Literal::Reference(ident) => format!("Reference<{:?}>", ident).as_str(),
-            },
-            Self::Identifier(ident) => &ident,
-            Self::Keyword(kw) => match kw {
-                Keyword::Let => "let",
-                Keyword::Mut => "mut",
-                Keyword::Fn => "fn",
-                Keyword::If => "if",
-                Keyword::Match => "match",
-                Keyword::Else => "else",
-                Keyword::Struct => "struct",
-                Keyword::Void => "void",
-                Keyword::String => "String",
-                Keyword::Bool => "bool",
-                Keyword::Option => "opt",
-                Keyword::Int => "int",
-                Keyword::Some => "Some",
-                Keyword::None => "None",
-                Keyword::Public => "public",
-                Keyword::Static => "static",
-                Keyword::For => "for",
-                Keyword::Yield => "yield",
-                Keyword::Import => "import",
-                Keyword::Return => "return",
-                Keyword::Match => "match",
-                Keyword::With => "with",
-                Keyword::Result => "result",
-                Keyword::Ok => "Ok",
-                Keyword::Error => "Error",
-                Keyword::Float => "float",
-                Keyword::Variant => "variant",
-                Keyword::Union => "union",
-                Keyword::Const => "const",
-            },
+impl From<TokenType> for String {
+    fn from(value: TokenType) -> String {
+        match value {
+            TokenType::LParen => "(",
+            TokenType::RParen => ")",
+            TokenType::LBrace => "{",
+            TokenType::RBrace => "}",
+            TokenType::LBracket => "[",
+            TokenType::RBracket => "]",
+            TokenType::Underscore => "_",
+            TokenType::Asterisk => "*",
+            TokenType::Semicolon => ";",
+            TokenType::Colon => ":",
+            TokenType::ColonColon => "::",
+            TokenType::Ampersand => "&",
+            TokenType::Plus => "+",
+            TokenType::Minus => "-",
+            TokenType::Not => "!",
+            TokenType::Equals => "=",
+            TokenType::Lt => "<",
+            TokenType::Gt => ">",
+            TokenType::Pipe => "|",
+            TokenType::EqEq => "==",
+            TokenType::NotEq => "!=",
+            TokenType::Mod => "%",
+            TokenType::Caret => "^",
+            TokenType::LogicalAnd => "&&",
+            TokenType::LogicalOr => "||",
+            TokenType::Arrow => "->",
+            TokenType::GtEquals => ">=",
+            TokenType::MinusEquals => "-=",
+            TokenType::StarStar => "**",
+            TokenType::MulEquals => "*=",
+            TokenType::DivEquals => "/=",
+            TokenType::PlusEquals => "+=",
+            TokenType::LeftShift => "<<",
+            TokenType::RightShift => ">>",
+            TokenType::Ternary => "?",
+            TokenType::LtEquals => "<=",
+            TokenType::Period => ".",
+            TokenType::Comma => ",",
+            TokenType::EOF => "EOF",
+            TokenType::Literal(literal) => {
+                return match literal {
+                    DataType::String(str) => format!("String: {}", str),
+                    DataType::Integer(int) => format!("Integer: {}", int),
+                    DataType::Float(float) => format!("Float: {}", float),
+                    DataType::Boolean(b) => format!("Boolean: {}", b),
+                    DataType::Char(ch) => format!("Char: {}", ch),
+                    DataType::Array(lit) => format!("Array<{:?}>", lit[0]),
+                    DataType::Reference(ident) => format!("Reference<{:?}>", ident),
+                };
+            }
+            TokenType::Identifier(ident) => {
+                return format!("Identifier: {}", ident);
+            }
+            TokenType::Keyword(kw) => kw.into(),
+            TokenType::Whitespace => "whitespace",
         }
+        .to_string()
     }
 }
+
 impl TokenType {
-    pub fn from_char(c: char) -> Option<Self> {
+    pub fn from_char(c: char) -> Option<TokenType> {
         match c {
             '(' => Some(Self::LParen),
             ')' => Some(Self::RParen),
@@ -313,11 +300,46 @@ impl TokenType {
     }
 }
 
+impl Into<&str> for Keyword {
+    fn into(self) -> &'static str {
+        match self {
+            Self::Const => "const",
+            Self::Let => "let",
+            Self::Mut => "mut",
+            Self::Float => "float",
+            Self::Fn => "fn",
+            Self::If => "if",
+            Self::Match => "match",
+            Self::Else => "else",
+            Self::Struct => "struct",
+            Self::Void => "void",
+            Self::String => "String",
+            Self::Result => "result",
+            Self::With => "with",
+            Self::Ok => "ok",
+            Self::Error => "error",
+            Self::Variant => "variant",
+            Self::Union => "union",
+            Self::Bool => "bool",
+            Self::Int => "int",
+            Self::Option => "option",
+            Self::Some => "Some",
+            Self::None => "None",
+            Self::Public => "public",
+            Self::Static => "static",
+            Self::For => "for",
+            Self::Yield => "yield",
+            Self::Import => "import",
+            Self::Return => "return",
+        }
+    }
+}
+
 impl From<&str> for TokenType {
     fn from(value: &str) -> Self {
         match value {
-            "true" => Self::Literal(Literal::Boolean(true)),
-            "false" => Self::Literal(Literal::Boolean(false)),
+            "true" => Self::Literal(DataType::Boolean(true)),
+            "false" => Self::Literal(DataType::Boolean(false)),
             "let" => Self::Keyword(Keyword::Let),
             "mut" => Self::Keyword(Keyword::Mut),
             "fn" => Self::Keyword(Keyword::Fn),

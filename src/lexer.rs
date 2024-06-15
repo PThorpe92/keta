@@ -1,4 +1,4 @@
-use crate::token::{Literal, Token, TokenType};
+use crate::token::{DataType, Token, TokenType};
 
 pub struct Lexer {
     filename: String,
@@ -197,7 +197,7 @@ impl Lexer {
         }
         self.advance();
         Some(Token::new(
-            TokenType::Literal(Literal::String(literal)),
+            TokenType::Literal(DataType::String(literal)),
             (start, self.position),
             self.line,
         ))
@@ -233,7 +233,7 @@ impl Lexer {
             self.advance();
         }
         Some(Token::new(
-            TokenType::Literal(Literal::Integer(number.parse::<i64>().unwrap())),
+            TokenType::Literal(DataType::Integer(number.parse::<i64>().unwrap())),
             (start, self.position),
             self.line,
         ))
@@ -248,7 +248,7 @@ impl Lexer {
             self.advance();
         }
         Some(Token::new(
-            TokenType::Literal(Literal::Float(number.parse::<f64>().unwrap())),
+            TokenType::Literal(DataType::Float(number.parse::<f64>().unwrap())),
             (start, self.position),
             self.line,
         ))
