@@ -1,7 +1,7 @@
 use crate::token::{DataType, Token, TokenType};
 
 pub struct Lexer {
-    filename: String,
+    pub filename: String,
     input: String,
     position: usize,
     line: usize,
@@ -31,10 +31,6 @@ impl Lexer {
     }
     fn peek_char(&self) -> Option<char> {
         self.input.chars().nth(self.position + 1)
-    }
-
-    pub fn get_filename(&self) -> String {
-        self.filename.clone()
     }
 
     fn advance(&mut self) {
@@ -248,7 +244,7 @@ impl Lexer {
             self.advance();
         }
         Some(Token::new(
-            TokenType::Literal(DataType::Float(number.parse::<f64>().unwrap())),
+            TokenType::Literal(DataType::Float(number)),
             (start, self.position),
             self.line,
         ))

@@ -1,15 +1,38 @@
 use crate::{
-    ast, lexer,
-    token::{self, Keyword, Token, TokenType},
+    ast::{self, EvaluationContext, Identifier, VariableDef},
+    lexer,
+    token::{self, DataType, Token, TokenType},
 };
-use std::convert::TryFrom;
 
-pub struct Parser {
-    lexer: lexer::Lexer,
+pub struct Parser<'a> {
+    tokens: std::iter::Peekable<TokenStream>,
+    pub identifiers: ast::EvaluationContext,
     current_token: Token,
-    current_position: usize,
-    pub ast: ast::Program,
-    identifiers: ast::EvaluationContext,
+    current_scope: usize,
+    is_global: bool,
+    namespace: &'a str,
+}
+
+pub struct TokenStream {
+    position: usize,
+    tokens: Vec<Token>,
+}
+impl TokenStream {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Self {
+            position: 0,
+            tokens,
+        }
+    }
+}
+
+impl Iterator for TokenStream {
+    type Item = Token;
+    fn next(&mut self) -> Option<Token> {
+        let token = self.tokens.get(self.position).cloned();
+        self.position += 1;
+        token
+    }
 }
 
 #[derive(Debug)]
@@ -27,561 +50,430 @@ impl ParsedSpan {
     }
 }
 
-impl Parser {
-    pub fn new(path: &str) -> Self {
-        let mut lexer = lexer::Lexer::new(path);
-        lexer.lex();
-        let current_token = lexer.tokens[0];
+impl<'a> Parser<'a> {
+    pub fn new(lexer: &'a lexer::Lexer) -> Self {
+        let tokens = lexer.tokens.clone();
+        let mut peekable = TokenStream::new(tokens).peekable();
+        let first = peekable
+            .next()
+            .unwrap_or(Token::new(TokenType::Whitespace, (0, 0), 1));
         Self {
-            lexer,
-            current_token,
-            current_position: 0,
-            ast: ast::Program {
-                namespace: lexer.get_filename(),
-                body: Vec::new(),
-            },
+            tokens: peekable,
             identifiers: ast::EvaluationContext::new(),
+            current_token: first,
+            current_scope: 0,
+            namespace: &lexer.filename,
+            is_global: true,
         }
     }
-
-    fn next_token(&mut self) {
-        self.current_position += 1;
-        self.current_token = self.lexer.tokens[self.current_position];
+    pub fn advance(&mut self) {
+        self.current_token = self
+            .tokens
+            .next()
+            .unwrap_or(Token::new(TokenType::EOF, (0, 0), 0));
     }
 
-    fn peek_token(&self) -> Token {
-        self.lexer.tokens[self.current_position + 1]
+    fn peek(&mut self) -> Option<&Token> {
+        self.tokens.peek()
     }
 
-    fn assert_identifier(&self) {
-        if let TokenType::Identifier(_) = self.current_token.token_type {
-            return;
-        }
-        let error_msg = format!(
-            "expected identifier on line: {} \n got: {:?}",
-            self.current_token.span.line, self.current_token.token_type
-        );
-        panic!("{}", error_msg);
+    fn parse(&mut self) -> ast::AstBuilder {
+        let mut builder = ast::AstBuilder::new(self.namespace.to_owned());
+        builder.program = self.parse_program(&mut builder.context);
+        builder
     }
 
-    fn assert_literal(&self) {
-        if let TokenType::Literal(_) = self.current_token.token_type {
-            return;
-        }
-        let error_msg = format!(
-            "expected DataType on line: {} \n got: {:?}",
-            self.current_token.span.line, self.current_token.token_type
-        );
-        panic!("{}", error_msg);
-    }
-    fn assert_keyword(&self, keyword: Keyword) {
-        if let TokenType::Keyword(k) = self.current_token.token_type {
-            if k == keyword {
-                return;
-            }
-        }
-        let error_msg = format!(
-            "expected {} on line: {} \n got: {:?}",
-            keyword, self.current_token.span.line, self.current_token.token_type
-        );
-        panic!("{}", error_msg);
-    }
-
-    fn assert_symbol(&self, symbol: TokenType) {
-        if symbol == self.current_token.token_type {
-            return;
-        } else {
-            let error_msg = format!(
-                "expected symbol: {:?} on line: {} \n got: {:?}",
-                symbol, self.current_token.span.line, self.current_token.token_type
+    fn assert_token(&mut self, expected: TokenType) {
+        if std::mem::discriminant(&self.current_token.token_type)
+            != std::mem::discriminant(&expected)
+        {
+            panic!(
+                "Expected token {:?}, got {:?}",
+                expected, self.current_token.token_type
             );
-            panic!("{}", error_msg);
         }
+        self.advance();
     }
 
-    fn parse_program(&mut self) {
-        while self.current_token.token_type != TokenType::EOF {
-            self.ast.body.push(self.parse_statement());
-        }
-    }
-
-    fn parse_statement(&mut self) -> ast::AstNode {
-        let node_type = match self.current_token.token_type {
-            TokenType::Keyword(keyword) => match keyword {
-                Keyword::Import => self.parse_import(),
-                Keyword::Const => self.parse_let_stmt(),
-                Keyword::Fn => self.parse_fn_def(),
-                Keyword::Struct => self.parse_struct_def(),
-                Keyword::Variant => self.parse_variant_def(),
-                Keyword::Union => self.parse_union_def(),
-                _ => panic!(
-                    "unexpected keyword: {:?} on line: {}",
-                    keyword, self.current_token.span.line,
-                ),
-            },
-            TokenType::Identifier(ident) => self.parse_let_stmt(),
-            _ => panic!(
-                "unexpected token: {:?} on line: {}",
-                self.current_token, self.current_token.span.line
-            ),
+    fn parse_program(&mut self, ctx: &mut ast::EvaluationContext) -> ast::Program {
+        let mut program = ast::Program {
+            namespace: self.namespace.to_owned(),
+            body: Vec::new(),
         };
-        node_type
-    }
-
-    fn parse_union_def(&mut self) -> ast::AstNode {
-        let start = self.current_token.span.line;
-        self.assert_keyword(Keyword::Union);
-        self.next_token();
-        self.assert_identifier();
-        let name: String = self.current_token.token_type.into();
-        self.next_token();
-        self.assert_symbol(TokenType::LBrace);
-        self.next_token();
-        let mut fields = Vec::new();
-        while self.current_token.token_type != TokenType::RBrace {
-            self.assert_identifier();
-            let field_name: String = self.current_token.token_type.into();
-            self.next_token();
-            self.assert_symbol(TokenType::Colon);
-            self.next_token();
-            let data_type = token::DataType::from_token_type(&self.current_token.token_type)
-                .expect("expected DataType");
-            fields.push(ast::StructField {
-                name: field_name.to_string(),
-                data_type,
-            });
-            self.next_token();
-            if self.current_token.token_type == TokenType::Comma {
-                self.next_token();
+        while let Some(token) = self.peek() {
+            match token.token_type {
+                TokenType::EOF => break,
+                _ => {
+                    program.body.push(self.parse_statement(ctx));
+                }
             }
         }
-        ast::AstNode {
-            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-            node_type: ast::NodeType::Definition(ast::Definition::Union(ast::UnionDef {
-                name: ast::Identifier(name.to_string()),
-                variants: fields,
-            })),
-        }
     }
 
-    fn parse_variant_def(&mut self) -> ast::AstNode {
-        let start = self.current_token.span.line;
-        self.assert_keyword(Keyword::Variant);
-        self.next_token();
-        let name: String = self.current_token.token_type.into();
-        self.next_token();
-        self.assert_symbol(TokenType::LBrace);
-        let mut fields = Vec::new();
-        while self.current_token.token_type != TokenType::RBrace {
-            self.assert_identifier();
-            let field_name: String = self.current_token.token_type.into();
-            self.next_token();
-            if self.current_token.token_type == TokenType::Comma {
-                self.next_token();
-            }
-        }
-        ast::AstNode {
-            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-            node_type: ast::NodeType::Definition(ast::Definition::Variant(ast::VariantDef {
-                name: ast::Identifier(name.to_string()),
-                variants: fields,
-            })),
-        }
-    }
-
-    fn parse_literal(&mut self) -> ast::Expression {
-        self.assert_literal();
-        let value = self.current_token.token_type;
-        ast::Expression::DataType(
-            token::DataType::from_token_type(&value).expect("expected DataType"),
-        )
-    }
-
-    fn parse_expression(&mut self) -> ast::Expression {
+    fn parse_statement(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
         match self.current_token.token_type {
-            TokenType::Literal(_) => self.parse_literal(),
-            TokenType::Identifier(_) => self.parse_identifier(),
-            TokenType::Keyword(keyword) => match keyword {
-                Keyword::If => self.parse_if(),
-                Keyword::Return => self.parse_return(),
-                _ => panic!(
-                    "unexpected keyword: {:?} on line: {}",
-                    keyword, self.current_token.span.line
-                ),
+            TokenType::Keyword(kw) => match kw {
+                token::Keyword::Let => self.parse_let(ctx),
+                token::Keyword::Import => self.parse_import(ctx),
+                token::Keyword::Fn => self.parse_function(ctx),
+                token::Keyword::Struct => self.parse_struct_def(ctx),
+                token::Keyword::Const => self.parse_const(ctx),
+                token::Keyword::If => self.parse_if(ctx),
+                token::Keyword::For => self.parse_for(ctx),
+                token::Keyword::Return => self.parse_return(ctx),
+                _ => self.parse_expression(ctx),
             },
-            _ => panic!(
-                "unexpected token: {:?} on line: {}",
-                self.current_token.token_type, self.current_token.span.line
-            ),
+            TokenType::Identifier(_) => self.parse_assignment(ctx),
         }
-    }
-    fn parse_return(&mut self) -> ast::Expression {
-        let start = self.current_token.span.line;
-        self.assert_keyword(Keyword::Return);
-        self.next_token();
-        let expression = self.parse_expression();
-        self.next_token();
-        ast::Expression::Return(Box::new(ast::Return { expression }))
     }
 
-    fn parse_identifier(&mut self) -> ast::Expression {
-        self.assert_identifier();
-        let ident: String = self.current_token.token_type.into();
-        self.next_token();
-        if self.identifiers.0.get(&ident).is_none() {
-            self.identifiers.0.insert(ident.to_string(), None);
+    fn parse_if(&mut self, ctx: &mut EvaluationContext) -> ast::AstNode {
+        self.advance();
+        let condition = self.parse_expression(ctx);
+        let body = self.parse_block(ctx);
+        let mut else_block = None;
+        if let TokenType::Keyword(token::Keyword::Else) = self.current_token.token_type {
+            self.advance();
+            else_block = Some(self.parse_block(ctx));
         }
-        ast::Expression::Identifier(ident.to_string())
+        ast::AstNode {
+            span: ParsedSpan {
+                line_start: self.current_token.span.line,
+                line_end: self.current_token.span.line,
+            },
+            node_type: ast::NodeType::Statement(ast::Statement::IfStmt(Box::new(ast::IfStmt {
+                condition,
+                body,
+                else_block,
+            }))),
+        }
     }
 
-    fn parse_else(&mut self) -> Option<ast::Block> {
-        if self.current_token.token_type == TokenType::RBrace {
-            self.next_token();
+    fn parse_assignment(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
+        let name = self.parse_identifier(ctx);
+        if ctx.variables.get(&name).is_none() {
+            panic!("Variable {} not found", name.0);
         }
-        if self.current_token.token_type == TokenType::Keyword(Keyword::Else) {
-            self.next_token();
-            self.assert_symbol(TokenType::LBrace);
-            self.next_token();
-            Some(self.parse_block())
+        self.assert_token(TokenType::Equals);
+        let value = self.parse_expression(ctx);
+        ast::AstNode {
+            span: ParsedSpan {
+                line_start: self.current_token.span.line,
+                line_end: self.current_token.span.line,
+            },
+            node_type: ast::NodeType::Statement(ast::Statement::Assignment(ast::Assignment {
+                identifier: name,
+                operator: token::Operator::Equal,
+                expression: value,
+            })),
+        }
+    }
+
+    fn parse_let(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
+        self.advance();
+        let name = self.parse_identifier(ctx);
+        let data_type = self.parse_data_type();
+        let value = if let TokenType::Equals = self.current_token.token_type {
+            self.advance();
+            Some(self.parse_expression(ctx))
         } else {
             None
-        }
-    }
-
-    fn parse_if(&mut self) -> ast::Expression {
-        let start = self.current_token.span.line;
-        self.assert_keyword(Keyword::If);
-        self.next_token();
-        match self.current_token.token_type {
-            TokenType::Identifier(ident) => match self.identifiers.0.get(&ident) {
-                Some(val) => {
-                    if self.peek_token().token_type == TokenType::LBrace {
-                        self.next_token();
-                        let body = self.parse_block();
-                        return ast::Expression::IfStatement(Box::new(ast::IfStatement {
-                            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-                            condition: ast::BinaryOp {
-                                left: ast::Expression::Identifier(ident),
-                                operator: token::Operator::NotEqual,
-                                right: ast::Expression::DataType(token::DataType::Boolean(true)),
-                            },
-                            consequence: body,
-                            alternative: self.parse_else(),
-                        }));
-                    }
-                }
-                None => {
-                    panic!("undeclared variable: {}", ident);
-                }
+        };
+        ctx.variables.insert(
+            name.clone(),
+            Some(ast::ScopedVar {
+                scope: self.current_scope,
+                value: data_type.clone(),
+            }),
+        );
+        ast::AstNode {
+            span: ParsedSpan {
+                line_start: self.current_token.span.line,
+                line_end: self.current_token.span.line,
             },
-            TokenType::Literal(value) => {
-                if self.peek_token().token_type == TokenType::LBrace {
-                    self.next_token();
-                    let body = self.parse_block();
-                    return ast::Expression::IfStatement(Box::new(ast::IfStatement {
-                        span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-                        condition: ast::BinaryOp {
-                            left: ast::Expression::DataType(value),
-                            operator: token::Operator::NotEqual,
-                            right: ast::Expression::DataType(token::DataType::Boolean(true)),
-                        },
-                        consequence: body,
-                        alternative: self.parse_else(),
-                    }));
-                }
-            }
-            TokenType::Not => {
-                self.next_token();
-                if let TokenType::Identifier(ident) = self.current_token.token_type {
-                    if let TokenType::LBrace = self.peek_token().token_type {
-                        self.next_token();
-                        let body = self.parse_block();
-                        return ast::Expression::IfStatement(Box::new(ast::IfStatement {
-                            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-                            condition: ast::BinaryOp {
-                                left: ast::Expression::Identifier(ident),
-                                operator: token::Operator::NotEqual,
-                                right: ast::Expression::DataType(token::DataType::Boolean(true)),
-                            },
-                            consequence: body,
-                            alternative: self.parse_else(),
-                        }));
-                    }
-                }
-            }
-            _ => {
-                let conditional = self.parse_binary_op();
-                self.next_token();
-            }
-        }
-        let condition = self.parse_binary_op();
-        self.next_token();
-        self.assert_symbol(TokenType::LBrace);
-        self.next_token();
-        let body = self.parse_block();
-        if self.current_token.token_type == TokenType::RBrace {
-            self.next_token();
-        }
-        if self.current_token.token_type == TokenType::Keyword(Keyword::Else) {
-            self.next_token();
-            self.assert_symbol(TokenType::LBrace);
-            self.next_token();
-            let alternative = self.parse_block();
-            self.next_token();
-            ast::Expression::IfStatement(Box::new(ast::IfStatement {
-                span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-                condition,
-                consequence: body,
-                alternative: Some(alternative),
-            }))
-        } else {
-            ast::Expression::IfStatement(Box::new(ast::IfStatement {
-                span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-                condition,
-                consequence: body,
-                alternative: None,
-            }))
-        }
-    }
-
-    fn parse_binary_op(&mut self) -> ast::BinaryOp {
-        let start = self.current_token.span.line;
-        let left = self.parse_expression();
-        self.next_token();
-        let operator = token::Operator::try_from(self.current_token.token_type).unwrap();
-        self.next_token();
-        let right = self.parse_expression();
-        ast::BinaryOp {
-            left,
-            operator,
-            right,
-        }
-    }
-
-    fn parse_struct_def(&mut self) -> ast::AstNode {
-        let span = self.current_token.span.line;
-        self.assert_keyword(Keyword::Struct);
-        self.next_token();
-        self.assert_identifier();
-        let name: String = self.current_token.token_type.into();
-        self.next_token();
-        self.assert_symbol(TokenType::LBrace);
-        self.next_token();
-        let mut fields = Vec::new();
-        while self.current_token.token_type != TokenType::RBrace {
-            self.assert_identifier();
-            let field_name: String = self.current_token.token_type.into();
-            self.next_token();
-            self.assert_symbol(TokenType::Colon);
-            self.next_token();
-            let data_type = token::DataType::from_token_type(&self.current_token.token_type)
-                .expect(&format!(
-                    "expected type after struct {} field on line {}",
-                    name, self.current_token.span.line,
-                ));
-            fields.push(ast::StructField {
-                name: field_name.to_string(),
-                data_type,
-            });
-            self.next_token();
-            if self.current_token.token_type == TokenType::Comma {
-                self.next_token();
-            }
-        }
-        ast::AstNode {
-            span: ParsedSpan::from_tokens(&span, &self.current_token.span.line),
-            node_type: ast::NodeType::Definition(ast::Definition::Struct(ast::StructDef {
-                name: name.to_string(),
-                fields,
-            })),
-        }
-    }
-
-    fn parse_import(&mut self) -> ast::AstNode {
-        let span = &self.current_token.span.line;
-        self.next_token();
-        self.assert_identifier();
-        let node = ast::Expression::Identifier(self.current_token.token_type.into());
-        self.next_token();
-        self.assert_symbol(TokenType::Semicolon);
-        ast::AstNode {
-            span: ParsedSpan::from_tokens(span, &self.current_token.span.line),
-            node_type: ast::NodeType::Expression(node),
-        }
-    }
-
-    fn parse_let_stmt(&mut self) -> ast::AstNode {
-        let start = self.current_token.span.line;
-        self.assert_keyword(Keyword::Let);
-        self.next_token();
-        let ident: String = self.current_token.token_type.into();
-        let node = ast::Expression::Identifier(String::from(ident));
-        self.next_token();
-        self.assert_symbol(TokenType::Equals);
-        self.next_token();
-        let expression = self.parse_expression();
-        match expression {
-            ast::Expression::Identifier(ident) => {
-                if self.identifiers.0.get(&ident).is_none() {
-                    panic!("undeclared variable: {}", ident);
-                }
-            }
-            ast::Expression::DataType(lit) => {
-                self.identifiers.0.insert(ident.to_string(), Some(lit));
-            }
-            _ => {}
-        }
-        self.identifiers.0.insert(ident.to_string(), None);
-        ast::AstNode {
-            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-            node_type: ast::NodeType::Definition(ast::Definition::Variable(ast::VariableDef {
-                name: ast::Identifier(ident.to_string()),
-                value: expression,
+            node_type: ast::NodeType::Definition(ast::Definition::Variable(VariableDef {
+                name,
+                value: value.unwrap(),
                 is_const: false,
             })),
         }
     }
-
-    fn parse_assignment(&mut self) -> ast::AstNode {
-        let start = self.current_token.span.line;
-        self.assert_identifier();
-        let ident: String = self.current_token.token_type.into();
-        self.next_token();
-        let operator = token::Operator::try_from(self.current_token.token_type).unwrap();
-        self.next_token();
-        let expression = self.parse_expression();
+    fn parse_const(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
+        self.advance();
+        let name = self.parse_identifier(ctx);
+        let data_type = self.parse_data_type();
+        self.assert_token(TokenType::Equals);
+        let value = self.parse_expression(ctx);
+        ctx.variables.insert(
+            name.clone(),
+            Some(ast::ScopedVar {
+                scope: self.current_scope,
+                value: data_type.clone(),
+            }),
+        );
         ast::AstNode {
-            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-            node_type: ast::NodeType::Statement(ast::Statement::Assignment(ast::Assignment {
-                identifier: ident.to_string(),
-                operator,
-                expression,
-            })),
-        }
-    }
-
-    fn parse_const_stmt(&mut self) -> ast::AstNode {
-        let start = self.current_token.span.line;
-        self.assert_keyword(Keyword::Const);
-        self.next_token();
-        let ident: String = self.current_token.token_type.into();
-        let node = ast::Expression::Identifier(String::from(ident));
-        self.next_token();
-        self.assert_symbol(TokenType::Equals);
-        self.next_token();
-        let expression = self.parse_expression();
-        ast::AstNode {
-            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-            node_type: ast::NodeType::Definition(ast::Definition::Variable(ast::VariableDef {
-                name: ast::Identifier(ident.to_string()),
-                value: expression,
+            span: ParsedSpan {
+                line_start: self.current_token.span.line,
+                line_end: self.current_token.span.line,
+            },
+            node_type: ast::NodeType::Definition(ast::Definition::Variable(VariableDef {
+                name,
+                value,
                 is_const: true,
             })),
         }
     }
 
-    fn parse_fn_args(&mut self) -> ast::AstNode {
-        let start = self.current_token.span.line;
-        let mut args = Vec::new();
-        while self.current_token.token_type != TokenType::RParen {
-            self.next_token();
-            // could be DataType or ident
-            let mut node: ast::FnArg;
-            if let TokenType::Literal(lit) = self.current_token.token_type {
-                node = ast::FnArg::DataType(lit);
-            } else if let TokenType::Identifier(ident) = self.current_token.token_type {
-                node = ast::FnArg::Variable(ast::Identifier(ident));
-            }
-            args.push(node);
-            self.next_token();
-        }
+    fn parse_struct_def(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
+        self.advance();
+        let name = self.parse_identifier(ctx);
+        let fields = self.parse_struct_fields(ctx);
         ast::AstNode {
-            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-            node_type: ast::NodeType::Expression(ast::Expression::FnArgs(args)),
-        }
-    }
-
-    fn parse_fn_params(&mut self) -> Vec<ast::FnParam> {
-        let mut params = Vec::new();
-        while self.current_token.token_type != TokenType::RParen {
-            self.next_token();
-            self.assert_identifier();
-            let ident: String = self.current_token.token_type.into();
-            self.next_token();
-            self.assert_symbol(TokenType::Colon);
-            let data_type = token::DataType::from_token_type(&self.current_token.token_type)
-                .expect(
-                    format!(
-                        "expected DataType on line: {}",
-                        self.current_token.span.line
-                    )
-                    .as_str(),
-                );
-            self.next_token();
-            params.push(ast::FnParam {
-                name: ast::Identifier(ident.to_string()),
-                data_type,
-            });
-            if self.current_token.token_type == TokenType::Comma {
-                self.next_token();
-            }
-        }
-        params
-    }
-
-    fn parse_fn_return_type(&mut self) -> token::DataType {
-        self.assert_symbol(TokenType::Lt);
-        self.next_token();
-        if !self.current_token.token_type.is_type() {
-            panic!("expected type on line: {}", self.current_token.span.line);
-        }
-        let return_type = self.current_token.token_type;
-        self.next_token();
-        self.assert_symbol(TokenType::Gt);
-        token::DataType::from_token_type(&return_type).expect(&format!(
-            "expected function return type on line {}",
-            self.current_token.span.line
-        ))
-    }
-
-    fn parse_fn_def(&mut self) -> ast::AstNode {
-        // fn<return_type> name(params) { body }
-        let start = self.current_token.span.line;
-        self.assert_keyword(Keyword::Fn);
-        self.next_token();
-        self.assert_identifier();
-        let name: String = self.current_token.token_type.into();
-        self.next_token();
-        let return_type = self.parse_fn_return_type();
-        self.next_token();
-        self.assert_symbol(TokenType::LParen);
-        let params = self.parse_fn_params();
-        self.assert_symbol(TokenType::RParen);
-        self.next_token();
-        self.assert_symbol(TokenType::LBrace);
-        self.next_token();
-        let body = self.parse_block();
-        ast::AstNode {
-            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-            node_type: ast::NodeType::Definition(ast::Definition::Function(ast::FunctionDef {
-                name: ast::Identifier(name.to_string()),
-                return_type,
-                parameters: params,
-                body,
+            span: ParsedSpan {
+                line_start: self.current_token.span.line,
+                line_end: self.current_token.span.line,
+            },
+            node_type: ast::NodeType::Definition(ast::Definition::Struct(ast::StructDef {
+                name,
+                fields,
             })),
         }
     }
 
-    fn parse_block(&mut self) -> ast::Block {
-        let start = self.current_token.span.line;
-        let mut statements = Vec::new();
-        while self.current_token.token_type != TokenType::RBrace {
-            self.next_token();
-            statements.push(self.parse_statement());
+    fn parse_struct_fields(&mut self, ctx: &mut ast::EvaluationContext) -> Vec<ast::StructField> {
+        let mut fields = Vec::new();
+        self.assert_token(TokenType::LBrace);
+        while TokenType::RBrace != self.current_token.token_type {
+            let name = self.parse_identifier(ctx);
+            let data_type = self.parse_data_type();
+            fields.push(ast::StructField { name, data_type });
         }
+        self.assert_token(TokenType::RBrace);
+        fields
+    }
+
+    fn parse_import(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
+        self.advance();
+        let path = self.parse_identifier(ctx);
+        ast::AstNode {
+            span: ParsedSpan {
+                line_start: self.current_token.span.line,
+                line_end: self.current_token.span.line,
+            },
+            node_type: ast::NodeType::Statement(ast::Statement::ImportStmt(Box::new(
+                ast::ImportStmt { path },
+            ))),
+        }
+    }
+
+    fn parse_function(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
+        let start_line = self.current_token.span.line;
+        self.advance();
+        let name = self.parse_identifier(ctx);
+        let params = self.parse_parameters(ctx);
+        let return_type = self.parse_return_type();
+        let body = self.parse_block(ctx);
+        ast::AstNode {
+            span: ParsedSpan {
+                line_start: self.current_token.span.line,
+                line_end: self.current_token.span.line,
+            },
+            node_type: ast::NodeType::Statement(ast::Statement::FunctionDef(Box::new(
+                ast::FunctionDef {
+                    name,
+                    parameters: params,
+                    return_type,
+                    body,
+                },
+            ))),
+        }
+    }
+
+    fn parse_return_type(&mut self) -> DataType {
+        if let TokenType::Arrow = self.current_token.token_type {
+            self.advance();
+            self.parse_data_type()
+        } else {
+            DataType::Void
+        }
+    }
+
+    fn parse_block(&mut self, ctx: &mut EvaluationContext) -> ast::Block {
+        let start_line = self.current_token.span.line;
+        self.assert_token(TokenType::LBrace);
+        self.is_global = false;
+        let mut body = Vec::new();
+        while let TokenType::RBrace = self.current_token.token_type {
+            body.push(self.parse_statement(ctx));
+        }
+        self.assert_token(TokenType::RBrace);
         ast::Block {
-            span: ParsedSpan::from_tokens(&start, &self.current_token.span.line),
-            body: statements,
+            span: ParsedSpan::from_tokens(&start_line, &self.current_token.span.line),
+            body,
         }
+    }
+
+    fn parse_data_type(&mut self) -> DataType {
+        if let TokenType::Keyword(kw) = self.current_token.token_type {
+            match kw {
+                token::Keyword::Int => DataType::Integer(0),
+                token::Keyword::Bool => DataType::Boolean(false),
+                token::Keyword::String => DataType::String(String::new()),
+                token::Keyword::Float => DataType::Float("0.0".to_string()),
+                token::Keyword::Void => DataType::Void,
+                token::Keyword::Option => {
+                    self.advance();
+                    self.assert_token(TokenType::Lt);
+                    let inner = self.parse_data_type();
+                    self.assert_token(TokenType::Gt);
+                    DataType::Option(Box::new(inner))
+                }
+                token::Keyword::Result => {
+                    self.advance();
+                    self.assert_token(TokenType::Lt);
+                    let inner = self.parse_data_type();
+                    self.assert_token(TokenType::Comma);
+                    let err = self.parse_data_type();
+                    self.assert_token(TokenType::Gt);
+                    DataType::Result(Box::new((inner, err)))
+                }
+                _ => unreachable!("Expected data type"),
+            }
+        } else {
+            unreachable!("Expected data type");
+        }
+    }
+
+    fn parse_identifier(&mut self, ctx: &mut ast::EvaluationContext) -> ast::Identifier {
+        if let TokenType::Identifier(ident) = self.current_token.token_type.clone() {
+            let identifier = ast::Identifier(ident);
+            if ctx.variables.get(&identifier).is_none() {
+                ctx.variables.insert(identifier.clone(), None);
+            }
+            self.advance();
+            identifier
+        } else {
+            unreachable!("Expected identifier");
+        }
+    }
+
+    fn parse_parameters(&mut self, ctx: &mut ast::EvaluationContext) -> Vec<ast::FnParam> {
+        let mut params = Vec::new();
+        self.assert_token(TokenType::LParen);
+        while TokenType::RParen != self.current_token.token_type {
+            match self.current_token.token_type {
+                TokenType::Comma => {
+                    self.advance();
+                    continue;
+                }
+                TokenType::Identifier(_) => {
+                    let name = self.parse_identifier(ctx);
+                    let data_type = self.parse_data_type();
+                    params.push(ast::FnParam { name, data_type });
+                    ctx.variables.insert(
+                        name,
+                        Some(ast::ScopedVar {
+                            scope: self.current_scope,
+                            value: data_type.clone(),
+                        }),
+                    );
+                }
+                _ => panic!("Expected identifier"),
+            }
+        }
+        self.assert_token(TokenType::RParen);
+        params
+    }
+
+    fn parse_expression(&mut self, ctx: &mut ast::EvaluationContext) -> ast::Expression {
+        match self.current_token.token_type {
+            TokenType::Identifier(_) => {
+                let ident = self.parse_identifier(ctx);
+                if let TokenType::LParen = self.current_token.token_type {
+                    self.parse_function_call(ctx, ident)
+                } else {
+                    ast::Expression::Identifier(ident)
+                }
+            }
+            TokenType::LParen => {
+                self.advance();
+                let expr = self.parse_expression(ctx);
+                self.assert_token(TokenType::RParen);
+                expr
+            }
+            TokenType::Minus => {
+                self.advance();
+                let expr = self.parse_expression(ctx);
+                ast::Expression::UnaryOp(Box::new(ast::UnaryOp {
+                    operator: "-".to_string(),
+                    expression: expr,
+                }))
+            }
+            TokenType::Not => {
+                self.advance();
+                let expr = self.parse_expression(ctx);
+                ast::Expression::UnaryOp(Box::new(ast::UnaryOp {
+                    operator: "!".to_string(),
+                    expression: expr,
+                }))
+            }
+            TokenType::Literal(lit) => {
+                self.advance();
+                if token::Operator::try_from(self.current_token.token_type).is_ok() {
+                    let operator =
+                        token::Operator::try_from(self.current_token.token_type.clone()).unwrap();
+                    self.advance();
+                    let right = self.parse_expression(ctx);
+                    return ast::Expression::BinaryOp(Box::new(ast::BinaryOp {
+                        left: ast::Expression::Literal(lit),
+                        operator,
+                        right,
+                    }));
+                }
+                ast::Expression::Literal(lit)
+            }
+            _ => {
+                let left = self.parse_expression(ctx);
+                let operator =
+                    token::Operator::try_from(self.current_token.token_type.clone()).unwrap();
+                self.advance();
+                let right = self.parse_expression(ctx);
+                ast::Expression::BinaryOp(Box::new(ast::BinaryOp {
+                    left,
+                    operator,
+                    right,
+                }))
+            }
+        }
+    }
+    fn parse_function_call(
+        &mut self,
+        ctx: &mut ast::EvaluationContext,
+        ident: ast::Identifier,
+    ) -> ast::Expression {
+        let args = self.parse_arguments(ctx);
+        ast::Expression::FnCall(Box::new(ast::FnCall {
+            name: ident,
+            arguments: args,
+        }))
+    }
+
+    fn parse_arguments(&mut self, ctx: &mut ast::EvaluationContext) -> Vec<ast::Expression> {
+        let mut args = Vec::new();
+        self.assert_token(TokenType::LParen);
+        while TokenType::RParen != self.current_token.token_type {
+            match self.current_token.token_type {
+                TokenType::Comma => {
+                    self.advance();
+                    continue;
+                }
+                _ => {
+                    let arg = self.parse_expression(ctx);
+                    args.push(arg);
+                }
+            }
+        }
+        self.assert_token(TokenType::RParen);
+        args
     }
 }

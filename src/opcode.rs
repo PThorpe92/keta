@@ -33,6 +33,15 @@ pub enum Opcode {
     NoOp,
 }
 
+impl Opcode {
+    pub fn is_jump(&self) -> bool {
+        match self {
+            Opcode::Jump(_) | Opcode::JumpIfTrue(_) | Opcode::JumpIfFalse(_) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     Int(i64),

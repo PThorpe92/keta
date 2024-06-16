@@ -3,12 +3,12 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
     pub span: Span,
 }
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -102,15 +102,20 @@ impl TryFrom<TokenType> for Operator {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Hash, Clone, PartialEq)]
 pub enum DataType {
     String(String),
     Integer(i64),
-    Float(f64),
+    Float(String),
     Boolean(bool),
     Char(char),
     Array(Vec<Box<DataType>>),
     Reference(Box<DataType>),
+    Void,
+    Error(String),
+    Result(Box<(DataType, DataType)>),
+    Option(Box<DataType>),
+    None,
 }
 
 impl DataType {
@@ -135,21 +140,15 @@ pub enum Keyword {
     Struct,
     Void,
     String,
-    With,
     Result,
     Ok,
     Error,
-    Variant,
-    Union,
     Bool,
     Option,
     Int,
     Some,
     None,
-    Public,
-    Static,
     For,
-    Yield,
     Import,
     Return,
 }
@@ -168,8 +167,7 @@ impl TokenType {
     pub fn is_type(&self) -> bool {
         match self {
             Self::Keyword(kw) => match kw {
-                Keyword::Union
-                | Keyword::Struct
+                Keyword::Struct
                 | Keyword::String
                 | Keyword::Bool
                 | Keyword::Int
@@ -258,6 +256,7 @@ impl From<TokenType> for String {
                     DataType::Char(ch) => format!("Char: {}", ch),
                     DataType::Array(lit) => format!("Array<{:?}>", lit[0]),
                     DataType::Reference(ident) => format!("Reference<{:?}>", ident),
+                    DataType::None => "None".to_string(),
                 };
             }
             TokenType::Identifier(ident) => {
@@ -315,20 +314,14 @@ impl Into<&str> for Keyword {
             Self::Void => "void",
             Self::String => "String",
             Self::Result => "result",
-            Self::With => "with",
             Self::Ok => "ok",
             Self::Error => "error",
-            Self::Variant => "variant",
-            Self::Union => "union",
             Self::Bool => "bool",
             Self::Int => "int",
             Self::Option => "option",
             Self::Some => "Some",
             Self::None => "None",
-            Self::Public => "public",
-            Self::Static => "static",
             Self::For => "for",
-            Self::Yield => "yield",
             Self::Import => "import",
             Self::Return => "return",
         }
@@ -351,16 +344,13 @@ impl From<&str> for TokenType {
             "bool" => Self::Keyword(Keyword::Bool),
             "int" => Self::Keyword(Keyword::Int),
             "opt" => Self::Keyword(Keyword::Option),
-            "Some" => Self::Keyword(Keyword::Some),
-            "None" => Self::Keyword(Keyword::None),
             "void" => Self::Keyword(Keyword::Void),
-            "public" => Self::Keyword(Keyword::Public),
-            "static" => Self::Keyword(Keyword::Static),
             "float" => Self::Keyword(Keyword::Float),
             "for" => Self::Keyword(Keyword::For),
-            "yield" => Self::Keyword(Keyword::Yield),
             "import" => Self::Keyword(Keyword::Import),
             "return" => Self::Keyword(Keyword::Return),
+            "ok" => Self::Keyword(Keyword::Ok),
+            "err" => Self::Keyword(Keyword::Error),
             _ => Self::Identifier(value.to_string()),
         }
     }

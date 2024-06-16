@@ -9,8 +9,40 @@ pub struct Program {
     pub body: Vec<AstNode>,
 }
 
-pub struct EvaluationContext(pub HashMap<String, Option<DataType>>);
+#[derive(Debug)]
+pub struct EvaluationContext {
+    pub variables: HashMap<Identifier, Option<ScopedVar>>,
+    pub functions: HashMap<Identifier, usize>,
+}
 
+#[derive(Debug, PartialEq, Hash, Clone)]
+pub struct ScopedVar {
+    pub scope: usize,
+    pub value: DataType,
+}
+
+#[derive(Debug)]
+pub struct AstBuilder {
+    pub program: Program,
+    pub context: EvaluationContext,
+}
+
+impl AstBuilder {
+    pub fn new(namespace: String) -> Self {
+        Self {
+            program: Program {
+                namespace,
+                body: Vec::new(),
+            },
+            context: EvaluationContext::new(),
+        }
+    }
+    pub fn push(&mut self, node: AstNode) {
+        self.program.body.push(node);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Precedence {
     Lowest,
     Equals,
@@ -38,9 +70,13 @@ impl Precedence {
 
 impl EvaluationContext {
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self {
+            variables: HashMap::new(),
+            functions: HashMap::new(),
+        }
     }
 }
+
 #[derive(Debug)]
 pub struct Block {
     pub span: ParsedSpan,
@@ -63,7 +99,7 @@ pub enum NodeType {
 #[derive(Debug)]
 pub enum Expression {
     Literal(DataType),
-    Identifier(String),
+    Identifier(Identifier),
     BinaryOp(Box<BinaryOp>),
     UnaryOp(Box<UnaryOp>),
     FnCall(Box<FnCall>),
@@ -89,7 +125,7 @@ pub struct UnaryOp {
 }
 #[derive(Debug)]
 pub struct Assignment {
-    pub identifier: String,
+    pub identifier: Identifier,
     pub operator: token::Operator,
     pub expression: Expression,
 }
@@ -117,14 +153,12 @@ pub struct Variable {
 
 #[derive(Debug)]
 pub struct FnCall {
-    pub name: String,
+    pub name: Identifier,
     pub arguments: Vec<Expression>,
 }
+
 #[derive(Debug)]
-pub enum FnArg {
-    DataType(crate::token::DataType),
-    Variable(Identifier),
-}
+pub struct FnArg(pub Expression);
 
 #[derive(Debug)]
 pub struct Return {
@@ -133,22 +167,14 @@ pub struct Return {
 
 #[derive(Debug)]
 pub struct ImportStmt {
-    pub path: String,
+    pub path: Identifier,
 }
 
 #[derive(Debug)]
 pub enum Definition {
     Variable(VariableDef),
-    Variant(VariantDef),
     Function(FunctionDef),
     Struct(StructDef),
-    Union(UnionDef),
-}
-
-#[derive(Debug)]
-pub struct UnionDef {
-    pub name: Identifier,
-    pub variants: Vec<StructField>,
 }
 
 #[derive(Debug)]
@@ -159,18 +185,12 @@ pub struct VariableDef {
 }
 
 #[derive(Debug)]
-pub struct VariantDef {
-    pub name: Identifier,
-    pub variants: Vec<Identifier>,
-}
-
-#[derive(Debug)]
 pub struct StructDef {
-    pub name: String,
+    pub name: Identifier,
     pub fields: Vec<StructField>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub struct Identifier(pub String);
 
 #[derive(Debug)]
@@ -182,6 +202,7 @@ pub enum Statement {
     Return(Box<Return>),
     Expression(Expression),
     Block(Block),
+    FunctionDef(Box<FunctionDef>),
 }
 
 #[derive(Debug)]
@@ -194,7 +215,7 @@ pub struct FunctionDef {
 
 #[derive(Debug)]
 pub struct StructField {
-    pub name: String,
+    pub name: Identifier,
     pub data_type: DataType,
 }
 #[derive(Debug)]
