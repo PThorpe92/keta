@@ -1,0 +1,6 @@
+import something;
+
+fn main() -> void {
+   let x: int = 420
+   let y: string = "some string"
+}

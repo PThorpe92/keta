@@ -80,6 +80,29 @@ pub enum Operator {
     GreaterThan,
     Call,
 }
+impl ToString for Operator {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Add => "+",
+            Self::Sub => "-",
+            Self::Div => "/",
+            Self::Mod => "%",
+            Self::Mul => "*",
+            Self::BitwiseAnd => "&",
+            Self::BitwiseOr => "|",
+            Self::BitwiseXor => "^",
+            Self::Pow => "**",
+            Self::LeftShift => "<<",
+            Self::RightShift => ">>",
+            Self::Equal => "==",
+            Self::NotEqual => "!=",
+            Self::LessThan => "<",
+            Self::GreaterThan => ">",
+            Self::Call => "(",
+        }
+        .to_string()
+    }
+}
 
 impl TryFrom<TokenType> for Operator {
     type Error = String;
@@ -151,6 +174,7 @@ pub enum Keyword {
     For,
     Import,
     Return,
+    In,
 }
 
 impl Display for Keyword {
@@ -252,6 +276,10 @@ impl From<TokenType> for String {
                     DataType::String(str) => format!("String: {}", str),
                     DataType::Integer(int) => format!("Integer: {}", int),
                     DataType::Float(float) => format!("Float: {}", float),
+                    DataType::Option(opt) => format!("Option<{:?}>", opt),
+                    DataType::Result(res) => format!("Result<{:?}>", res),
+                    DataType::Void => "Void".to_string(),
+                    DataType::Error(err) => format!("Error: {}", err),
                     DataType::Boolean(b) => format!("Boolean: {}", b),
                     DataType::Char(ch) => format!("Char: {}", ch),
                     DataType::Array(lit) => format!("Array<{:?}>", lit[0]),
@@ -324,6 +352,7 @@ impl Into<&str> for Keyword {
             Self::For => "for",
             Self::Import => "import",
             Self::Return => "return",
+            Self::In => "in",
         }
     }
 }
@@ -351,6 +380,7 @@ impl From<&str> for TokenType {
             "return" => Self::Keyword(Keyword::Return),
             "ok" => Self::Keyword(Keyword::Ok),
             "err" => Self::Keyword(Keyword::Error),
+            "in" => Self::Keyword(Keyword::In),
             _ => Self::Identifier(value.to_string()),
         }
     }

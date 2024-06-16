@@ -5,4 +5,10 @@ fn main() {
     for token in lexer.tokens.iter() {
         println!("{}", token);
     }
+    let mut parser = keta::parser::Parser::new(&lexer);
+    let ast_builder = parser.parse();
+    let program = ast_builder.program;
+    program.body.iter().for_each(|node| {
+        println!("{:?}", node);
+    });
 }

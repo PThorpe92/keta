@@ -52,6 +52,10 @@ impl Lexer {
             '\"' => self.extract_string(),
             '-' => match self.peek_char() {
                 Some(c) if c.is_ascii_digit() => self.extract_digit(),
+                Some(_) if self.peek_char() == Some('>') => {
+                    self.advance();
+                    Some(self.single_token(TokenType::Arrow))
+                }
                 Some(_) => Some(self.single_token(TokenType::Minus)),
                 None => Some(self.single_token(TokenType::EOF)),
             },

@@ -89,6 +89,12 @@ pub struct AstNode {
     pub node_type: NodeType,
 }
 
+impl std::fmt::Display for AstNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self.node_type)
+    }
+}
+
 #[derive(Debug)]
 pub enum NodeType {
     Expression(Expression),
@@ -133,7 +139,7 @@ pub struct Assignment {
 #[derive(Debug)]
 pub struct IfStatement {
     pub span: ParsedSpan,
-    pub condition: BinaryOp,
+    pub condition: Expression,
     pub consequence: Block,
     pub alternative: Option<Block>,
 }
@@ -141,7 +147,7 @@ pub struct IfStatement {
 #[derive(Debug)]
 pub struct ForLoop {
     pub variable: Variable,
-    pub range: (i64, i64),
+    pub iterable: Expression,
     pub body: Block,
 }
 
