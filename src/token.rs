@@ -80,6 +80,7 @@ pub enum Operator {
     GreaterThan,
     Call,
 }
+
 impl ToString for Operator {
     fn to_string(&self) -> String {
         match self {
@@ -190,15 +191,11 @@ impl Display for DataType {
 impl TokenType {
     pub fn is_type(&self) -> bool {
         match self {
-            Self::Keyword(kw) => match kw {
-                Keyword::Struct
-                | Keyword::String
-                | Keyword::Bool
-                | Keyword::Int
-                | Keyword::Void => true,
-                _ => false,
-            },
-            Self::Identifier(ident) => true, // possibly a user defined type
+            Self::Keyword(kw) => matches!(
+                kw,
+                Keyword::Struct | Keyword::String | Keyword::Bool | Keyword::Int | Keyword::Void
+            ),
+            Self::Identifier(_) => true, // possibly a user defined type
             _ => false,
         }
     }
@@ -327,32 +324,32 @@ impl TokenType {
     }
 }
 
-impl Into<&str> for Keyword {
-    fn into(self) -> &'static str {
-        match self {
-            Self::Const => "const",
-            Self::Let => "let",
-            Self::Mut => "mut",
-            Self::Float => "float",
-            Self::Fn => "fn",
-            Self::If => "if",
-            Self::Match => "match",
-            Self::Else => "else",
-            Self::Struct => "struct",
-            Self::Void => "void",
-            Self::String => "String",
-            Self::Result => "result",
-            Self::Ok => "ok",
-            Self::Error => "error",
-            Self::Bool => "bool",
-            Self::Int => "int",
-            Self::Option => "option",
-            Self::Some => "Some",
-            Self::None => "None",
-            Self::For => "for",
-            Self::Import => "import",
-            Self::Return => "return",
-            Self::In => "in",
+impl From<Keyword> for &str {
+    fn from(value: Keyword) -> &'static str {
+        match value {
+            Keyword::Const => "const",
+            Keyword::Let => "let",
+            Keyword::Mut => "mut",
+            Keyword::Float => "float",
+            Keyword::Fn => "fn",
+            Keyword::If => "if",
+            Keyword::Match => "match",
+            Keyword::Else => "else",
+            Keyword::Struct => "struct",
+            Keyword::Void => "void",
+            Keyword::String => "str",
+            Keyword::Result => "result",
+            Keyword::Ok => "ok",
+            Keyword::Error => "error",
+            Keyword::Bool => "bool",
+            Keyword::Int => "int",
+            Keyword::Option => "option",
+            Keyword::Some => "Some",
+            Keyword::None => "None",
+            Keyword::For => "for",
+            Keyword::Import => "import",
+            Keyword::Return => "return",
+            Keyword::In => "in",
         }
     }
 }
@@ -369,7 +366,7 @@ impl From<&str> for TokenType {
             "match" => Self::Keyword(Keyword::Match),
             "else" => Self::Keyword(Keyword::Else),
             "struct" => Self::Keyword(Keyword::Struct),
-            "String" => Self::Keyword(Keyword::String),
+            "str" => Self::Keyword(Keyword::String),
             "bool" => Self::Keyword(Keyword::Bool),
             "int" => Self::Keyword(Keyword::Int),
             "opt" => Self::Keyword(Keyword::Option),

@@ -2,7 +2,7 @@ use crate::token::{DataType, Token, TokenType};
 
 pub struct Lexer {
     pub filename: String,
-    input: String,
+    pub input: String,
     position: usize,
     line: usize,
     current: char,

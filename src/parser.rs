@@ -1,16 +1,18 @@
 use crate::{
-    ast::{self, EvaluationContext, Variable, VariableDef},
+    ast::{self, EvaluationContext, Precedence, Variable, VariableDef},
     lexer,
     token::{self, DataType, Token, TokenType},
 };
+use nu_ansi_term::{AnsiString, Color, Style};
 
 pub struct Parser<'a> {
     tokens: std::iter::Peekable<TokenStream>,
     pub identifiers: ast::EvaluationContext,
     current_token: Token,
-    current_scope: usize,
-    is_global: bool,
+    pub current_scope: usize,
+    pub is_global: bool,
     namespace: &'a str,
+    input: &'a str,
 }
 
 pub struct TokenStream {
@@ -64,6 +66,7 @@ impl<'a> Parser<'a> {
             current_scope: 0,
             namespace: &lexer.filename,
             is_global: true,
+            input: &lexer.input,
         }
     }
 
@@ -82,8 +85,17 @@ impl<'a> Parser<'a> {
             .unwrap_or(Token::new(TokenType::EOF, (0, 0), 0));
     }
 
-    fn peek(&mut self) -> Option<&Token> {
-        self.tokens.peek()
+    fn peek(&mut self) -> Option<&TokenType> {
+        self.tokens.peek().map(|t| &t.token_type)
+    }
+
+    fn get_input_line(&self, line: usize) -> String {
+        let error_line = AnsiString::from(self.input.lines().nth(line - 1).unwrap_or(""));
+        let style = Style::new()
+            .fg(Color::Green)
+            .bold()
+            .paint(error_line.to_string());
+        style.to_string()
     }
 
     pub fn parse(&mut self) -> ast::AstBuilder {
@@ -96,10 +108,12 @@ impl<'a> Parser<'a> {
         if std::mem::discriminant(&self.current_token.token_type)
             != std::mem::discriminant(&expected)
         {
-            panic!(
+            let style = Style::new().bold().fg(Color::Red);
+            let err = format!(
                 "Expected token {:?}, got {:?}",
                 expected, self.current_token.token_type
             );
+            panic!("{}", style.paint(err).to_string());
         }
         self.advance();
     }
@@ -110,7 +124,7 @@ impl<'a> Parser<'a> {
             body: Vec::new(),
         };
         while let Some(token) = self.peek() {
-            match token.token_type {
+            match token {
                 TokenType::EOF => break,
                 _ => {
                     program.body.push(self.parse_statement(ctx));
@@ -131,10 +145,37 @@ impl<'a> Parser<'a> {
                 token::Keyword::Const => self.parse_const(ctx),
                 token::Keyword::If => self.parse_if(ctx),
                 token::Keyword::For => self.parse_for(ctx),
-                _ => unreachable!(),
+                _ => ast::AstNode {
+                    span: ParsedSpan {
+                        line_start: self.current_token.span.line,
+                        line_end: self.current_token.span.line,
+                    },
+                    node_type: ast::NodeType::Expression(
+                        self.parse_expression(ctx, Precedence::Lowest),
+                    ),
+                },
             },
-            TokenType::Identifier(_) => self.parse_assignment(ctx),
-            _ => unreachable!(),
+            TokenType::Identifier(_) => {
+                if self.peek() == Some(&TokenType::LParen) {
+                    let ident = self.parse_identifier(ctx);
+                    let exp = self.parse_function_call(ctx, ident);
+                    ast::AstNode {
+                        span: ParsedSpan {
+                            line_start: self.current_token.span.line,
+                            line_end: self.current_token.span.line,
+                        },
+                        node_type: ast::NodeType::Expression(exp),
+                    }
+                } else {
+                    self.parse_assignment(ctx)
+                }
+            }
+            _ => unreachable!(
+                "Error on line {}:\n  {}\n Expected statement, got {:?}",
+                self.current_token.span.line,
+                self.get_input_line(self.current_token.span.line),
+                self.current_token.token_type
+            ),
         }
     }
 
@@ -142,7 +183,7 @@ impl<'a> Parser<'a> {
         println!("parsing if: {:?}", self.current_token);
         let start_line = self.current_token.span.line;
         self.advance();
-        let condition = self.parse_expression(ctx);
+        let condition = self.parse_expression(ctx, Precedence::Lowest);
         let body = self.parse_block(ctx);
         let mut else_block = None;
         if let TokenType::Keyword(token::Keyword::Else) = self.current_token.token_type {
@@ -171,7 +212,7 @@ impl<'a> Parser<'a> {
         self.advance();
         let identifier = self.parse_identifier(ctx);
         self.assert_token(TokenType::Keyword(token::Keyword::In));
-        let iterable = self.parse_expression(ctx);
+        let iterable = self.parse_expression(ctx, Precedence::Lowest);
         let mut value = None;
         match iterable {
             ast::Expression::Identifier(ref ident) => {
@@ -254,7 +295,7 @@ impl<'a> Parser<'a> {
             panic!("Variable {} not found", name.0);
         }
         self.assert_token(TokenType::Equals);
-        let value = self.parse_expression(ctx);
+        let value = self.parse_expression(ctx, Precedence::Lowest);
         ast::AstNode {
             span: ParsedSpan {
                 line_start: self.current_token.span.line,
@@ -269,14 +310,18 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_let(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
-        println!("parsing let: {:?}", self.current_token);
-        self.advance();
+        self.assert_token(TokenType::Keyword(token::Keyword::Let));
         let name = self.parse_identifier(ctx);
-        self.assert_token(TokenType::Colon);
-        let data_type = self.parse_data_type();
+        let data_type = if self.current_token.token_type == token::TokenType::Colon {
+            self.advance();
+            self.parse_data_type()
+        } else {
+            DataType::None
+        };
+        println!("parsing let: {:?}", self.current_token);
         let value = if let TokenType::Equals = self.current_token.token_type {
             self.advance();
-            Some(self.parse_expression(ctx))
+            Some(self.parse_expression(ctx, Precedence::Lowest))
         } else {
             None
         };
@@ -299,13 +344,14 @@ impl<'a> Parser<'a> {
             })),
         }
     }
+
     fn parse_const(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
         println!("parsing const: {:?}", self.current_token);
         self.advance();
         let name = self.parse_identifier(ctx);
         let data_type = self.parse_data_type();
         self.assert_token(TokenType::Equals);
-        let value = self.parse_expression(ctx);
+        let value = self.parse_expression(ctx, Precedence::Lowest);
         ctx.variables.insert(
             name.clone(),
             Some(ast::ScopedVar {
@@ -357,6 +403,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_import(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
+        println!(
+            "parsing import stmt: current token: {:?} current_scope: {}",
+            self.current_token.token_type, self.current_scope
+        );
         self.advance();
         let path = self.parse_identifier(ctx);
         println!("parsing import: {:?}", path);
@@ -373,13 +423,17 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function_def(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
+        self.increment_scope();
+        println!(
+            "parsing fn def: current token: {:?} current_scope: {}",
+            self.current_token.token_type, self.current_scope
+        );
         let start_line = self.current_token.span.line;
         self.advance();
         let name = self.parse_identifier(ctx);
         println!("parsing function: {:?}", name);
         let params = self.parse_parameters(ctx);
         let return_type = self.parse_return_type();
-        self.advance();
         let body = self.parse_block(ctx);
         ast::AstNode {
             span: ParsedSpan {
@@ -404,12 +458,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_block(&mut self, ctx: &mut EvaluationContext) -> ast::Block {
+        println!(
+            "parsing block: current token: {:?} current_scope: {}",
+            self.current_token.token_type, self.current_scope
+        );
         let start_line = self.current_token.span.line;
         self.assert_token(TokenType::LBrace);
         self.increment_scope();
         self.is_global = false;
         let mut body = Vec::new();
-        while let TokenType::RBrace = self.current_token.token_type {
+        while TokenType::RBrace != self.current_token.token_type {
             body.push(self.parse_statement(ctx));
         }
         self.assert_token(TokenType::RBrace);
@@ -421,9 +479,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_data_type(&mut self) -> DataType {
-        println!("parsing data type: {:?}", self.current_token.token_type);
+        println!(
+            "parsing data type: current token: {:?} current_scope: {}",
+            self.current_token.token_type, self.current_scope
+        );
         if let TokenType::Keyword(kw) = self.current_token.token_type {
-            match kw {
+            let res = match kw {
                 token::Keyword::Int => DataType::Integer(0),
                 token::Keyword::Bool => DataType::Boolean(false),
                 token::Keyword::String => DataType::String(String::new()),
@@ -446,7 +507,9 @@ impl<'a> Parser<'a> {
                     DataType::Result(Box::new((inner, err)))
                 }
                 _ => unreachable!("Expected data type"),
-            }
+            };
+            self.advance();
+            res
         } else {
             unreachable!(
                 "Expected data type, found {:?}",
@@ -471,6 +534,10 @@ impl<'a> Parser<'a> {
     fn parse_parameters(&mut self, ctx: &mut ast::EvaluationContext) -> Vec<ast::FnParam> {
         let mut params = Vec::new();
         self.assert_token(TokenType::LParen);
+        println!(
+            "parsing parameters: current token: {:?} current_scope: {}",
+            self.current_token, self.current_scope
+        );
         while TokenType::RParen != self.current_token.token_type {
             match self.current_token.token_type {
                 TokenType::Comma => {
@@ -479,6 +546,7 @@ impl<'a> Parser<'a> {
                 }
                 TokenType::Identifier(_) => {
                     let name = self.parse_identifier(ctx);
+                    self.assert_token(TokenType::Colon);
                     let data_type = self.parse_data_type();
                     params.push(ast::FnParam {
                         name: name.clone(),
@@ -492,23 +560,28 @@ impl<'a> Parser<'a> {
                         }),
                     );
                 }
-                _ => panic!("Expected identifier"),
+                _ => panic!(
+                    "Expected identifier, got {:?}",
+                    self.current_token.token_type
+                ),
             }
         }
         self.assert_token(TokenType::RParen);
         params
+            .iter()
+            .for_each(|param| println!("function param: {:?}", param));
+        params
     }
 
-    fn parse_expression(&mut self, ctx: &mut ast::EvaluationContext) -> ast::Expression {
+    fn parse_primary_expression(&mut self, ctx: &mut ast::EvaluationContext) -> ast::Expression {
+        println!(
+            "parsing primary expression: current token: {:?} current_scope: {}",
+            self.current_token.token_type, self.current_scope
+        );
         match self.current_token.token_type.clone() {
-            tk if token::Operator::try_from(tk.clone()).is_ok() => {
-                let operator = token::Operator::try_from(tk).unwrap();
+            TokenType::Literal(lit) => {
                 self.advance();
-                let right = self.parse_expression(ctx);
-                ast::Expression::UnaryOp(Box::new(ast::UnaryOp {
-                    operator: operator.to_string(),
-                    expression: right,
-                }))
+                ast::Expression::Literal(lit)
             }
             TokenType::Identifier(_) => {
                 let ident = self.parse_identifier(ctx);
@@ -520,54 +593,53 @@ impl<'a> Parser<'a> {
             }
             TokenType::LParen => {
                 self.advance();
-                let expr = self.parse_expression(ctx);
+                let expr = self.parse_expression(ctx, Precedence::Lowest);
                 self.assert_token(TokenType::RParen);
                 expr
             }
-            TokenType::Minus => {
-                self.advance();
-                let expr = self.parse_expression(ctx);
-                ast::Expression::UnaryOp(Box::new(ast::UnaryOp {
-                    operator: "-".to_string(),
-                    expression: expr,
-                }))
-            }
-            TokenType::Not => {
-                self.advance();
-                let expr = self.parse_expression(ctx);
-                ast::Expression::UnaryOp(Box::new(ast::UnaryOp {
-                    operator: "!".to_string(),
-                    expression: expr,
-                }))
-            }
-            TokenType::Literal(lit) => {
-                self.advance();
-                if token::Operator::try_from(self.current_token.token_type.clone()).is_ok() {
-                    let operator =
-                        token::Operator::try_from(self.current_token.token_type.clone()).unwrap();
-                    self.advance();
-                    let right = self.parse_expression(ctx);
-                    return ast::Expression::BinaryOp(Box::new(ast::BinaryOp {
-                        left: ast::Expression::Literal(lit),
-                        operator,
-                        right,
-                    }));
-                }
-                ast::Expression::Literal(lit)
-            }
-            _ => {
-                let left = self.parse_expression(ctx);
-                let operator =
-                    token::Operator::try_from(self.current_token.token_type.clone()).unwrap();
-                self.advance();
-                let right = self.parse_expression(ctx);
-                ast::Expression::BinaryOp(Box::new(ast::BinaryOp {
-                    left,
-                    operator,
-                    right,
-                }))
-            }
+            _ => panic!("Unexpected token: {:?}", self.current_token.token_type),
         }
+    }
+
+    fn parse_expression(
+        &mut self,
+        ctx: &mut ast::EvaluationContext,
+        precedence: Precedence,
+    ) -> ast::Expression {
+        println!(
+            "parsing expression: current token: {:?} current_scope: {}",
+            self.current_token.token_type, self.current_scope
+        );
+        let mut left = self.parse_primary_expression(ctx);
+        while precedence < self.current_precedence() {
+            let operator: Result<token::Operator, _> =
+                self.current_token.token_type.clone().try_into();
+            let op = match operator {
+                Ok(op) => op,
+                _ => return left,
+            };
+            self.advance();
+            let right = self.parse_expression(ctx, self.operator_precedence(&op));
+            left = ast::Expression::BinaryOp(Box::new(ast::BinaryOp {
+                left,
+                operator: op,
+                right,
+            }));
+        }
+
+        left
+    }
+
+    fn current_precedence(&self) -> Precedence {
+        let op: Result<token::Operator, _> = self.current_token.token_type.clone().try_into();
+        match op {
+            Ok(ref op) => Precedence::from(op),
+            _ => Precedence::Lowest,
+        }
+    }
+
+    fn operator_precedence(&self, op: &token::Operator) -> Precedence {
+        Precedence::from(op.to_owned())
     }
 
     #[rustfmt::skip]
@@ -589,7 +661,7 @@ impl<'a> Parser<'a> {
                     continue;
                 }
                 _ => {
-                    let arg = self.parse_expression(ctx);
+                    let arg = self.parse_expression(ctx, ast::Precedence::Lowest);
                     args.push(arg);
                 }
             }

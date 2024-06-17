@@ -1,6 +1,13 @@
-import something;
+import println;
+
+fn test_func(x: int, y: str) -> void {
+   let z = x + 69
+   let w: str = y + "nice"
+   println(z)
+}
 
 fn main() -> void {
    let x: int = 420
-   let y: string = "some string"
+   let y: str = "some string"
+   test_func(x, y)
 }

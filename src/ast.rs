@@ -9,7 +9,7 @@ pub struct Program {
     pub body: Vec<AstNode>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct EvaluationContext {
     pub variables: HashMap<Identifier, Option<ScopedVar>>,
     pub functions: HashMap<Identifier, usize>,
@@ -42,7 +42,7 @@ impl AstBuilder {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum Precedence {
     Lowest,
     Equals,
@@ -52,8 +52,9 @@ pub enum Precedence {
     Prefix,
     Call,
 }
+
 impl Precedence {
-    pub fn from(op: token::Operator) -> Self {
+    pub fn from(op: &token::Operator) -> Self {
         match op {
             token::Operator::BitwiseAnd
             | token::Operator::BitwiseOr
