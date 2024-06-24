@@ -4,15 +4,16 @@ use crate::{
     token::{self, DataType, Token, TokenType},
 };
 use nu_ansi_term::{AnsiString, Color, Style};
+use tracing::debug;
 
 pub struct Parser<'a> {
     tokens: std::iter::Peekable<TokenStream>,
-    pub identifiers: ast::EvaluationContext,
     current_token: Token,
     pub current_scope: usize,
     pub is_global: bool,
     namespace: &'a str,
     input: &'a str,
+    pub program: ast::Program,
 }
 
 pub struct TokenStream {
@@ -37,7 +38,7 @@ impl Iterator for TokenStream {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedSpan {
     pub line_start: usize,
     pub line_end: usize,
@@ -61,21 +62,26 @@ impl<'a> Parser<'a> {
             .unwrap_or(Token::new(TokenType::Whitespace, (0, 0), 1));
         Self {
             tokens: peekable,
-            identifiers: ast::EvaluationContext::new(),
             current_token: first,
             current_scope: 0,
             namespace: &lexer.filename,
             is_global: true,
             input: &lexer.input,
+            program: ast::Program {
+                namespace: lexer.filename.to_owned(),
+                body: Vec::new(),
+            },
         }
     }
 
     fn increment_scope(&mut self) {
+        self.is_global = false;
         self.current_scope += 1;
     }
 
     fn decrement_scope(&mut self) {
         self.current_scope -= 1;
+        self.is_global = self.current_scope == 0;
     }
 
     pub fn advance(&mut self) {
@@ -98,10 +104,15 @@ impl<'a> Parser<'a> {
         style.to_string()
     }
 
-    pub fn parse(&mut self) -> ast::AstBuilder {
+    pub fn parse(&mut self) {
         let mut builder = ast::AstBuilder::new(self.namespace.to_owned());
-        builder.program = self.parse_program(&mut builder.context);
-        builder
+        self.program = self.parse_program(&mut builder.context);
+    }
+
+    pub fn analyze(&self, ctx: &mut EvaluationContext) {
+        for node in &self.program.body {
+            self.analyze_node(&node, ctx);
+        }
     }
 
     fn assert_token(&mut self, expected: TokenType) {
@@ -135,7 +146,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
-        println!("parsing statement: {:?}", self.current_token);
+        debug!("parsing statement: {:?}", self.current_token);
         match self.current_token.token_type {
             TokenType::Keyword(kw) => match kw {
                 token::Keyword::Let => self.parse_let(ctx),
@@ -180,7 +191,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if(&mut self, ctx: &mut EvaluationContext) -> ast::AstNode {
-        println!("parsing if: {:?}", self.current_token);
+        debug!("parsing if: {:?}", self.current_token);
         let start_line = self.current_token.span.line;
         self.advance();
         let condition = self.parse_expression(ctx, Precedence::Lowest);
@@ -208,7 +219,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_for(&mut self, ctx: &mut EvaluationContext) -> ast::AstNode {
-        println!("parsing for: {:?}", self.current_token);
+        debug!("parsing for: {:?}", self.current_token);
         self.advance();
         let identifier = self.parse_identifier(ctx);
         self.assert_token(TokenType::Keyword(token::Keyword::In));
@@ -289,9 +300,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_assignment(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
-        println!("parsing assignment: {:?}", self.current_token);
+        debug!("parsing assignment: {:?}", self.current_token);
         let name = self.parse_identifier(ctx);
-        if ctx.variables.get(&name).is_none() {
+        if !ctx.variables.contains_key(&name) {
             panic!("Variable {} not found", name.0);
         }
         self.assert_token(TokenType::Equals);
@@ -316,20 +327,38 @@ impl<'a> Parser<'a> {
             self.advance();
             self.parse_data_type()
         } else {
-            DataType::None
+            DataType::Inferred
         };
-        println!("parsing let: {:?}", self.current_token);
+        debug!("parsing let: {:?}", self.current_token);
         let value = if let TokenType::Equals = self.current_token.token_type {
             self.advance();
             Some(self.parse_expression(ctx, Precedence::Lowest))
         } else {
             None
         };
+        match value {
+            Some(ref val) => {
+                match val {
+                    Expression::Literal(ref lit) => {
+                        ctx.variables.insert(
+                            name.clone(),
+                            Some(ast::ScopedVar {
+                                scope: self.current_scope,
+                                value: lit.clone(),
+                            }),
+                        );
+                    }
+                    Expression::Variable(ref var) => {
+                        ctx.variables.insert(name.clone(), (Some(ast::ScopedVarvar.value.clone())))
+                    }
+                }
+            }
+        }
         ctx.variables.insert(
             name.clone(),
             Some(ast::ScopedVar {
                 scope: self.current_scope,
-                value: data_type.clone(),
+                value: 
             }),
         );
         ast::AstNode {
@@ -346,7 +375,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_const(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
-        println!("parsing const: {:?}", self.current_token);
+        debug!("parsing const: {:?}", self.current_token);
         self.advance();
         let name = self.parse_identifier(ctx);
         let data_type = self.parse_data_type();
@@ -373,7 +402,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_struct_def(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
-        println!("parsing struct: {:?}", self.current_token);
+        debug!("parsing struct: {:?}", self.current_token);
         self.advance();
         let name = self.parse_identifier(ctx);
         let fields = self.parse_struct_fields(ctx);
@@ -390,7 +419,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_struct_fields(&mut self, ctx: &mut ast::EvaluationContext) -> Vec<ast::StructField> {
-        println!("parsing struct fields: {:?}", self.current_token);
+        debug!("parsing struct fields: {:?}", self.current_token);
         let mut fields = Vec::new();
         self.assert_token(TokenType::LBrace);
         while TokenType::RBrace != self.current_token.token_type {
@@ -403,13 +432,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_import(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
-        println!(
+        debug!(
             "parsing import stmt: current token: {:?} current_scope: {}",
             self.current_token.token_type, self.current_scope
         );
         self.advance();
         let path = self.parse_identifier(ctx);
-        println!("parsing import: {:?}", path);
+        //FIXME: for now treat path like functions imported from other modules
+        ctx.functions.insert(path.clone(), self.current_scope);
         self.assert_token(TokenType::Semicolon);
         ast::AstNode {
             span: ParsedSpan {
@@ -424,14 +454,11 @@ impl<'a> Parser<'a> {
 
     fn parse_function_def(&mut self, ctx: &mut ast::EvaluationContext) -> ast::AstNode {
         self.increment_scope();
-        println!(
-            "parsing fn def: current token: {:?} current_scope: {}",
-            self.current_token.token_type, self.current_scope
-        );
         let start_line = self.current_token.span.line;
         self.advance();
         let name = self.parse_identifier(ctx);
-        println!("parsing function: {:?}", name);
+        debug!("parsing function def: {}", name);
+        ctx.functions.insert(name.clone(), self.current_scope);
         let params = self.parse_parameters(ctx);
         let return_type = self.parse_return_type();
         let body = self.parse_block(ctx);
@@ -452,13 +479,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_return_type(&mut self) -> DataType {
-        println!("parsing return type: {:?}", self.current_token);
+        debug!("parsing return type: {:?}", self.current_token);
         self.assert_token(TokenType::Arrow);
         self.parse_data_type()
     }
 
     fn parse_block(&mut self, ctx: &mut EvaluationContext) -> ast::Block {
-        println!(
+        debug!(
             "parsing block: current token: {:?} current_scope: {}",
             self.current_token.token_type, self.current_scope
         );
@@ -479,7 +506,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_data_type(&mut self) -> DataType {
-        println!(
+        debug!(
             "parsing data type: current token: {:?} current_scope: {}",
             self.current_token.token_type, self.current_scope
         );
@@ -487,8 +514,8 @@ impl<'a> Parser<'a> {
             let res = match kw {
                 token::Keyword::Int => DataType::Integer(0),
                 token::Keyword::Bool => DataType::Boolean(false),
-                token::Keyword::String => DataType::String(String::new()),
-                token::Keyword::Float => DataType::Float("0.0".to_string()),
+                token::Keyword::String => DataType::String(None),
+                token::Keyword::Float => DataType::Float(None),
                 token::Keyword::Void => DataType::Void,
                 token::Keyword::Option => {
                     self.advance();
@@ -521,7 +548,7 @@ impl<'a> Parser<'a> {
     fn parse_identifier(&mut self, ctx: &mut ast::EvaluationContext) -> ast::Identifier {
         if let TokenType::Identifier(ident) = self.current_token.token_type.clone() {
             let identifier = ast::Identifier(ident);
-            if ctx.variables.get(&identifier).is_none() {
+            if !ctx.variables.contains_key(&identifier) {
                 ctx.variables.insert(identifier.clone(), None);
             }
             self.advance();
@@ -534,7 +561,7 @@ impl<'a> Parser<'a> {
     fn parse_parameters(&mut self, ctx: &mut ast::EvaluationContext) -> Vec<ast::FnParam> {
         let mut params = Vec::new();
         self.assert_token(TokenType::LParen);
-        println!(
+        debug!(
             "parsing parameters: current token: {:?} current_scope: {}",
             self.current_token, self.current_scope
         );
@@ -569,12 +596,12 @@ impl<'a> Parser<'a> {
         self.assert_token(TokenType::RParen);
         params
             .iter()
-            .for_each(|param| println!("function param: {:?}", param));
+            .for_each(|param| debug!("function param: {:?}", param));
         params
     }
 
     fn parse_primary_expression(&mut self, ctx: &mut ast::EvaluationContext) -> ast::Expression {
-        println!(
+        debug!(
             "parsing primary expression: current token: {:?} current_scope: {}",
             self.current_token.token_type, self.current_scope
         );
@@ -606,7 +633,7 @@ impl<'a> Parser<'a> {
         ctx: &mut ast::EvaluationContext,
         precedence: Precedence,
     ) -> ast::Expression {
-        println!(
+        debug!(
             "parsing expression: current token: {:?} current_scope: {}",
             self.current_token.token_type, self.current_scope
         );
@@ -645,10 +672,15 @@ impl<'a> Parser<'a> {
     #[rustfmt::skip]
     fn parse_function_call(&mut self, ctx: &mut ast::EvaluationContext, ident: ast::Identifier) -> ast::Expression {
         let args = self.parse_arguments(ctx);
-        ast::Expression::FnCall(Box::new(ast::FnCall {
+        if ctx.functions.contains_key(&ident) {
+             ast::Expression::FnCall(Box::new(ast::FnCall {
             name: ident,
             arguments: args,
-        }))
+            }))
+        } else {
+            debug!("{:?}", ctx.functions.keys().collect::<Vec<&ast::Identifier>>());
+            panic!("Undeclared function: {}", ident);
+        }
     }
 
     fn parse_arguments(&mut self, ctx: &mut ast::EvaluationContext) -> Vec<ast::Expression> {

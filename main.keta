@@ -2,7 +2,7 @@ import println;
 
 fn test_func(x: int, y: str) -> void {
    let z = x + 69
-   let w: str = y + "nice"
+   let w = y + "nice"
    println(z)
 }
 

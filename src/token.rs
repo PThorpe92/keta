@@ -77,31 +77,38 @@ pub enum Operator {
     Equal,
     NotEqual,
     LessThan,
+    LessThanOrEq,
     GreaterThan,
+    GreaterThanOrEq,
     Call,
 }
 
-impl ToString for Operator {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Add => "+",
-            Self::Sub => "-",
-            Self::Div => "/",
-            Self::Mod => "%",
-            Self::Mul => "*",
-            Self::BitwiseAnd => "&",
-            Self::BitwiseOr => "|",
-            Self::BitwiseXor => "^",
-            Self::Pow => "**",
-            Self::LeftShift => "<<",
-            Self::RightShift => ">>",
-            Self::Equal => "==",
-            Self::NotEqual => "!=",
-            Self::LessThan => "<",
-            Self::GreaterThan => ">",
-            Self::Call => "(",
-        }
-        .to_string()
+impl std::fmt::Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Add => "+",
+                Self::Sub => "-",
+                Self::Div => "/",
+                Self::Mod => "%",
+                Self::Mul => "*",
+                Self::BitwiseAnd => "&",
+                Self::BitwiseOr => "|",
+                Self::BitwiseXor => "^",
+                Self::Pow => "**",
+                Self::LeftShift => "<<",
+                Self::RightShift => ">>",
+                Self::Equal => "==",
+                Self::NotEqual => "!=",
+                Self::LessThan => "<",
+                Self::LessThanOrEq => "<=",
+                Self::GreaterThanOrEq => ">=",
+                Self::GreaterThan => ">",
+                Self::Call => "(",
+            }
+        )
     }
 }
 
@@ -128,9 +135,9 @@ impl TryFrom<TokenType> for Operator {
 
 #[derive(Debug, Hash, Clone, PartialEq)]
 pub enum DataType {
-    String(String),
-    Integer(i64),
-    Float(String),
+    String(Option<String>),
+    Integer(Option<i64>),
+    Float(Option<String>),
     Boolean(bool),
     Char(char),
     Array(Vec<Box<DataType>>),
@@ -139,7 +146,7 @@ pub enum DataType {
     Error(String),
     Result(Box<(DataType, DataType)>),
     Option(Box<DataType>),
-    None,
+    Inferred,
 }
 
 impl DataType {
@@ -185,7 +192,20 @@ impl Display for Keyword {
 }
 impl Display for DataType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            DataType::String(str) => write!(f, "String: {}", str),
+            DataType::Integer(int) => write!(f, "Integer: {}", int),
+            DataType::Float(float) => write!(f, "Float: {}", float),
+            DataType::Option(opt) => write!(f, "Option<{}>", opt),
+            DataType::Result(res) => write!(f, "Result<{:?}>", res),
+            DataType::Void => write!(f, "Void"),
+            DataType::Error(err) => write!(f, "Error: {}", err),
+            DataType::Boolean(b) => write!(f, "Boolean: {}", b),
+            DataType::Char(ch) => write!(f, "Char: {}", ch),
+            DataType::Array(lit) => write!(f, "Array<{:?}>", lit[0]),
+            DataType::Reference(ident) => write!(f, "Reference<{:?}>", ident),
+            DataType::None => write!(f, "None"),
+        }
     }
 }
 impl TokenType {

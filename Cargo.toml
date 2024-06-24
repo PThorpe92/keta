@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 nu-ansi-term = "0.50.0"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
